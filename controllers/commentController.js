@@ -1,5 +1,5 @@
 // Import your modules here
-import mongoose, { model } from "mongoose";
+import mongoose from "mongoose";
 import BlogPost from "../db/models/BlogPost.js";
 import Comment from "../db/models/Comment.js";
 import User from "../db/models/User.js";
@@ -176,8 +176,6 @@ async function getRemainingAcceptedReplies(req, res) {
       return res.status(400).json({ message: "Parent comment ID is required" });
     }
 
-    console.log("Fetching replies for parent comment ID:", parentCommentIds);
-
     const remainingReplies = await Comment.find({ parentComment: parentCommentIds, status: 'accepted' })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -187,8 +185,6 @@ async function getRemainingAcceptedReplies(req, res) {
         model: "User", // Fixed typo: 'modal' -> 'model'
         select: "_id name profileImage role"
       });
-
-    console.log(`Found ${remainingReplies.length} replies for parent comment ID: ${parentCommentIds}`);
 
     res.status(200).json({ remainingReplies });
   } catch (err) {
@@ -215,7 +211,7 @@ async function acceptComment(req, res) {
 }
 
 async function deleteComment(req, res) {
-  const { commentId, blogId } = req.params;
+  const { commentId } = req.params;
   const authorId = req.userId;
 
   try {
