@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body {
+        background: #f0f0f0;
+      }
+      table {
+        background: #03204f;
+        padding: 20px;
+        width: 100%;
+      }
+      h1 {
+        text-align: center;
+        font-size: 24px;
+        text-transform: capitalize;
+        color: #fff;
+        border-bottom: 2px solid lightgreen;
+        margin: 0;
+      }
+      p {
+        font-size: 16px;
+        padding: 0 4px;
+        display: flex;
+        color: #a8c7fa;
+      }
+      strong {
+        text-transform: capitalize;
+        font-size: 17px;
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <table
+      cellspacing="0"
+      cellpadding="0"
+      border="0"
+      align="center"
+      width="600"
+      style="border: 2px solid lightgreen"
+    >
+      <tr>
+        <td>
+          <h1>${userType} Form Submission</h1>
+          <table cellspacing="0" cellpadding="0" border="0" width="100%">
+            <tr>
+              <td>
+                <p>
+                  <strong>Name:&nbsp;</strong>
+                  ${fullName}
+                </p>
+                <p style="color: #4d90fe">
+                  <strong>Email:&nbsp;</strong>
+                  ${email}
+                </p>
+                <p>
+                  <strong>Phone Number:&nbsp;</strong>
+                  ${phoneNumber}
+                </p>
+                <p>
+                  <strong>Country:&nbsp;</strong>
+                  ${country}
+                </p>
+                <p>
+                  <strong>languagesSpoken:&nbsp;</strong>
+                  ${languagesSpoken}
+                </p>
+                ${additionalInfo}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
