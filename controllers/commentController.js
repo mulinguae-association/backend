@@ -186,7 +186,13 @@ async function getRemainingAcceptedReplies(req, res) {
         select: "_id name profileImage role"
       });
 
-    res.status(200).json({ remainingReplies });
+    // Also return total accepted replies count for the parent comment
+    const totalAcceptedReplies = await Comment.countDocuments({
+      parentComment: parentCommentIds,
+      status: "accepted",
+    });
+
+    res.status(200).json({ remainingReplies, totalAcceptedReplies });
   } catch (err) {
     console.error("Error fetching replies:", err);
     res.status(500).json({ message: "Error fetching replies" });
