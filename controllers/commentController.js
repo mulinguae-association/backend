@@ -7,11 +7,11 @@ import User from "../db/models/User.js";
 // Define your functions
 async function createComment(req, res) {
   try {
-    const { content, id } = req.body;
+    const { content } = req.body;
     const authorId = req.userId;
-    const authorName = req.userName;
+    const id = req.params.id; // blog id comes from route param
     // find author info
-    const author = await User.findById(authorId)
+    const author = await User.findById(authorId);
 
     // Find the blog post with the provided ID
     const blogPost = await BlogPost.findById(id);
@@ -23,33 +23,35 @@ async function createComment(req, res) {
     const comment = new Comment({
       content,
       blogId: id,
-      authorId,
-      authorName,
       postedBy: author,
-      status: req.role === "admin" ? "accepted" : "pending"
+      parentComment: null,
+      status: req.role === "admin" ? "accepted" : "pending",
     });
 
     await comment.save();
 
-    res.status(201).json({
-      message: "Comment added successfully",
-      comment: comment,
-    });
+    // Increment parent comment count on BlogPost atomically
+    await BlogPost.findByIdAndUpdate(id, { $inc: { commentsCount: 1 } });
+
+    res.status(201).json({ message: "Comment added successfully", comment });
   } catch (error) {
     console.error("Error adding comment:", error);
     res.status(500).json({ error: "An error occurred" });
   }
 }
 async function updatedComment(req, res) {
-  const { id } = req.params
+  const { id } = req.params;
   const { content } = req.body;
   try {
     // Find the blog post with the provided ID
     const comment = await Comment.findById(id);
     if (!comment) {
-      return res.status(404).json({ error: "Comment not found" })
+      return res.status(404).json({ error: "Comment not found" });
     }
-    if (comment.postedBy._id.toString() === req.userId.toString() || req.role === "admin") {
+    if (
+      comment.postedBy._id.toString() === req.userId.toString() ||
+      req.role === "admin"
+    ) {
       // Update the comment content
       comment.content = content;
       comment.status = req.role === "admin" ? "accepted" : "pending";
@@ -64,7 +66,6 @@ async function updatedComment(req, res) {
     res.status(500).json({ error: "An error occurred" });
   }
 }
-
 // Create a reply comment and push it into the parent comment's replies array
 async function createReplyComment(req, res) {
   const { content, blogId, parentCommentId } = req.body;
@@ -72,7 +73,7 @@ async function createReplyComment(req, res) {
   try {
     const parentComment = await Comment.findById(parentCommentId);
     // find author info
-    const author = await User.findById(authorId)
+    const author = await User.findById(authorId);
     if (!parentComment) {
       return res.status(404).json({ error: "Parent comment not found" });
     }
@@ -82,26 +83,25 @@ async function createReplyComment(req, res) {
       blogId,
       postedBy: author,
       parentComment: parentCommentId,
-      status: req.role === "admin" ? "accepted" : "pending"
+      status: req.role === "admin" ? "accepted" : "pending",
     });
 
     await replyComment.save();
 
-    parentComment.repliesCount += 1
-    // parentComment.lastReply = replyComment._id;
-    // add last reply to the blog post
-    await parentComment.save();
-
-    const blogPost = await BlogPost.findById(blogId);
-    if (blogPost) {
-      blogPost.lastReply = replyComment._id;
-      await blogPost.save()
-    }
-
-    return res.status(201).json({
-      message: "Reply added successfully",
-      comment: replyComment,
+    // Atomically push reply id into parentComment.replies and increment repliesCount
+    await Comment.findByIdAndUpdate(parentCommentId, {
+      $push: { replies: replyComment._id },
+      $inc: { repliesCount: 1 },
     });
+
+    // Atomically update lastReply on blog post
+    await BlogPost.findByIdAndUpdate(blogId, {
+      $set: { lastReply: replyComment._id },
+    });
+
+    return res
+      .status(201)
+      .json({ message: "Reply added successfully", comment: replyComment });
   } catch (error) {
     console.error("Error adding reply comment:", error);
     res.status(500).json({ error: "An error occurred" });
@@ -114,8 +114,8 @@ async function getPendingComments(req, res) {
       return res.status(403).json({ error: "No permission." });
     }
     const pendingComments = await Comment.find({ status: "pending" }).populate({
-      path: 'replies',
-      model: 'Comment',
+      path: "replies",
+      model: "Comment",
     });
     res.status(200).json(pendingComments);
   } catch (error) {
@@ -133,7 +133,7 @@ async function getAcceptedComments(req, res) {
     const acceptedComments = await Comment.find({
       blogId,
       parentComment: null, // Only parent comments
-      status: "accepted"
+      status: "accepted",
     })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -141,24 +141,32 @@ async function getAcceptedComments(req, res) {
       .populate({
         path: "postedBy",
         model: "User",
-        select: "_id name profileImage role"
+        select: "_id name profileImage role",
       });
 
     const totalComments = await Comment.aggregate([
-      { $match: { blogId: new mongoose.Types.ObjectId(blogId), status: "accepted" } }, // Match accepted comments
+      {
+        $match: {
+          blogId: new mongoose.Types.ObjectId(blogId),
+          status: "accepted",
+        },
+      }, // Match accepted comments
       {
         $group: {
           _id: null, // Group everything
-          totalCount: { $sum: 1 } // Count each comment
-        }
-      }
+          totalCount: { $sum: 1 }, // Count each comment
+        },
+      },
     ]);
 
     // Safely extract total comment count
-    const totalCommentCount = totalComments.length > 0 ? totalComments[0].totalCount : 0;
+    const totalCommentCount =
+      totalComments.length > 0 ? totalComments[0].totalCount : 0;
     // let totalCommentCount = await Comment.countDocuments({ status: "accepted", blogId })
     // Return the accepted comments and the total comment count
-    res.status(200).json({ acceptedComments, totalComments: totalCommentCount });
+    res
+      .status(200)
+      .json({ acceptedComments, totalComments: totalCommentCount });
   } catch (error) {
     console.error("Error retrieving accepted comments:", error);
     res.status(500).json({ error: "An error occurred" });
@@ -176,14 +184,17 @@ async function getRemainingAcceptedReplies(req, res) {
       return res.status(400).json({ message: "Parent comment ID is required" });
     }
 
-    const remainingReplies = await Comment.find({ parentComment: parentCommentIds, status: 'accepted' })
+    const remainingReplies = await Comment.find({
+      parentComment: parentCommentIds,
+      status: "accepted",
+    })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .populate({
         path: "postedBy",
         model: "User", // Fixed typo: 'modal' -> 'model'
-        select: "_id name profileImage role"
+        select: "_id name profileImage role",
       });
 
     res.status(200).json({ remainingReplies });
@@ -191,7 +202,7 @@ async function getRemainingAcceptedReplies(req, res) {
     console.error("Error fetching replies:", err);
     res.status(500).json({ message: "Error fetching replies" });
   }
-};
+}
 
 async function acceptComment(req, res) {
   try {
@@ -222,10 +233,25 @@ async function deleteComment(req, res) {
 
     const isParentComment = comment.parentComment === null; // Check if this is a parent comment
 
-    if (comment.postedBy._id.toString() === authorId.toString() || req.role === "admin") {
+    if (
+      comment.postedBy._id.toString() === authorId.toString() ||
+      req.role === "admin"
+    ) {
       if (isParentComment) {
-        await Comment.deleteMany({ parentComment: commentId })
+        // Delete all replies of this parent comment
+        await Comment.deleteMany({ parentComment: commentId });
+        // Decrement blog post parent comment count
+        await BlogPost.findByIdAndUpdate(req.params.blogId, {
+          $inc: { commentsCount: -1 },
+        });
+      } else {
+        // If this is a reply, remove it from parent's replies array and decrement repliesCount
+        await Comment.findByIdAndUpdate(comment.parentComment, {
+          $pull: { replies: comment._id },
+          $inc: { repliesCount: -1 },
+        });
       }
+
       // Delete the comment
       await Comment.findByIdAndDelete(commentId);
 
@@ -249,5 +275,5 @@ export {
   getPendingComments,
   getAcceptedComments,
   getRemainingAcceptedReplies,
-  acceptComment
+  acceptComment,
 };
