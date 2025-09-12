@@ -7,7 +7,7 @@ const commentSchema = new mongoose.Schema({
   likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   unlikes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   loves: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-  postedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  postedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   blogId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "BlogPost",
@@ -26,12 +26,9 @@ const commentSchema = new mongoose.Schema({
   repliesCount: { type: Number, default: 0 },
 });
 
-const Comment = mongoose.model("Comment", commentSchema);
+// Add indexes to speed up lookups and pagination
+commentSchema.index({ blogId: 1, parentComment: 1, status: 1, createdAt: -1 });
 
-//Middleware to update replies count when a reply added or removed
-commentSchema.post('save', async function (doc) {
-  doc.repliesCount = doc.replies.length;
-  await doc.save();
-})
+const Comment = mongoose.model("Comment", commentSchema);
 
 export default Comment;
