@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Display Data</title>
+    <style>
+      body {
+        background-color: #f2f3f8;
+        padding: 20px;
+      }
+      .container {
+        border-radius: 10px;
+      }
+      h1 {
+        text-align: center;
+      }
+      .parent {
+        border-bottom: 1px solid #c9c9c9;
+        background: #fff;
+        padding: 20px;
+        margin: 0 auto;
+      }
+      label {
+        font-weight: bold;
+        font-size: 18px;
+        color: darkblue;
+      }
+      span {
+        font-size: 17px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>Feedback</h1>
+    <div class="container">
+      <div class="parent">
+        <label for="fullName">Full Name:</label>
+        <span id="fullNameValue">{{fullName}}</span>
+      </div>
+
+      <div class="parent">
+        <label for="email">Email:</label>
+        <span id="emailValue">{{email}}</span>
+      </div>
+
+      <div class="parent">
+        <label for="affiliation">Affiliation:</label>
+        <span id="affiliationValue">{{affiliation}}</span>
+      </div>
+
+      <div class="parent">
+        <label for="affiliationOther">Other Affiliation:</label>
+        <span id="affiliationOtherValue">{{affiliationOther}}</span>
+      </div>
+
+      <div class="parent">
+        <label for="type">Type:</label>
+        <span id="typeValue">{{type}}</span>
+      </div>
+
+      <div class="parent">
+        <label for="details">Details:</label>
+        <span id="detailsValue">{{details}}</span>
+      </div>
+
+      <div class="parent">
+        <label for="browser">Browser:</label>
+        <span id="browserValue">{{browser}}</span>
+      </div>
+
+      <div class="parent">
+        <label for="browserOther">Other Browser:</label>
+        <span id="browserOtherValue">{{browserOther}}</span>
+      </div>
+
+      <div class="parent">
+        <label for="operatingSystem">Operating System:</label>
+        <span id="operatingSystemValue">{{operatingSystem}}</span>
+      </div>
+
+      <div class="parent">
+        <label for="operatingSystemOther">Other Operating System:</label>
+        <span id="operatingSystemOtherValue">{{operatingSystemOther}}</span>
+      </div>
+
+      <div class="parent">
+        <label for="url">URL:</label>
+        <span id="urlValue">{{url}}</span>
+      </div>
+    </div>
+  </body>
+</html>
