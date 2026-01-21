@@ -7,6 +7,15 @@ import { connectToDatabase } from "./db/db.js";
 import createAdminUser from "./utils/createAdminUser.js";
 import cookieParser from "cookie-parser";
 import compression from "compression";
+import dotenv from "dotenv"; // Move dotenv import to the top
+import express from "express";
+import cors from "cors";
+import bodyParser from "body-parser";
+import routes from "./routes/index.js";
+import { connectToDatabase } from "./db/db.js";
+import createAdminUser from "./utils/createAdminUser.js";
+import cookieParser from "cookie-parser";
+import compression from "compression";
 dotenv.config(); // Load environment variables from .env
 
 const app = express();
@@ -15,7 +24,7 @@ app.use(bodyParser.json());
 app.use(
   cors({
     credentials: true,
-    origin: "http://localhost:3000",
+    origin: process.env.FRONTEND_URL || "http://localhost:3000",
   }),
 );
 
@@ -24,10 +33,13 @@ app.use(compression());
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 //middleware
+app.use(express.urlencoded({ extended: true }));
+//middleware
 
 // Connect to MongoDB
 connectToDatabase()
   .then(() => {
+    console.log("Connected to MongoDB");
     console.log("Connected to MongoDB");
     createAdminUser()
       .then(() => console.log("Predefined user created successfully"))
@@ -37,15 +49,15 @@ connectToDatabase()
   })
   .catch((error) => {
     console.error("MongoDB connection error:", error);
+    console.error("MongoDB connection error:", error);
   });
-
-// Mount the routes
 
 // Root route for backend status
 app.get("/", (req, res) => {
   res.send("Mulingua Backend is running!");
 });
 
+// Mount the routes
 app.use("/uploads", express.static("uploads"));
 app.use("/api", routes);
 
