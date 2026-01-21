@@ -126,6 +126,7 @@ const logout = (req, res) => {
     httpOnly: true,
     sameSite: "None",
     secure: process.env.NODE_ENV === "production",
+    path: "/",
   });
   res.status(200).json("Logout success");
 };
