@@ -122,7 +122,11 @@ const getProfile = (req, res) => {
 };
 
 const logout = (req, res) => {
-  res.clearCookie("token");
+  res.clearCookie("token", {
+    httpOnly: true,
+    sameSite: "None",
+    secure: process.env.NODE_ENV === "production",
+  });
   res.status(200).json("Logout success");
 };
 
@@ -148,7 +152,7 @@ async function forgotPassword(req, res) {
       );
       const htmlTemplate = await fs.readFile(templatePath, "utf-8");
 
-      const link = `http://localhost:3000/${lang}/reset/${user._id}/${token}`;
+      const link = `${process.env.FRONTEND_URL}/${lang}/reset/${user._id}/${token}`;
       const formateHtml = htmlTemplate.replace("{{resetLink}}", link);
 
       const mailOptions = {
