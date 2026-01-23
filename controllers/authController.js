@@ -92,8 +92,9 @@ async function login(req, res) {
         res
           .cookie("token", token, {
             httpOnly: true,
-            sameSite: "None",
+            sameSite: process.env.NODE_ENV === "production" ? "None" : "Strict",
             secure: process.env.NODE_ENV === "production",
+            path: "/",
           })
           .json(userData);
       },
@@ -124,7 +125,7 @@ const getProfile = (req, res) => {
 const logout = (req, res) => {
   res.clearCookie("token", {
     httpOnly: true,
-    sameSite: "None",
+    sameSite: process.env.NODE_ENV === "production" ? "None" : "Strict",
     secure: process.env.NODE_ENV === "production",
     path: "/",
   });
@@ -291,8 +292,9 @@ async function updateProfile(req, res) {
     const updatedToken = generateToken(user);
     res.cookie("token", updatedToken, {
       httpOnly: true,
-      sameSite: "None",
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Strict",
       secure: process.env.NODE_ENV === "production",
+      path: "/",
     });
     return res.status(200).json({
       data: {
