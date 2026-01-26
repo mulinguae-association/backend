@@ -45,7 +45,23 @@ app.get("/", (req, res) => {
   res.send("Mulingua Backend is running!");
 });
 
-// Mount the routes
+app.use(async (req, res, next) => {
+  if (req.originalUrl.startsWith("/api")) {
+    try {
+      // This ensures connection is ready before the route runs
+      await connectToDatabase();
+      next();
+    } catch (error) {
+      console.error("Database connection failed:", error);
+      return res
+        .status(503)
+        .json({ error: "Service Unavailable: Database Connection Error" });
+    }
+  } else {
+    next();
+  }
+});
+
 app.use("/uploads", express.static("uploads"));
 app.use("/api", routes);
 
