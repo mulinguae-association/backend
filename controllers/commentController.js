@@ -162,7 +162,6 @@ async function getAcceptedComments(req, res) {
     // Safely extract total comment count
     const totalCommentCount =
       totalComments.length > 0 ? totalComments[0].totalCount : 0;
-    // let totalCommentCount = await Comment.countDocuments({ status: "accepted", blogId })
     // Return the accepted comments and the total comment count
     res
       .status(200)
@@ -192,7 +191,7 @@ async function getRemainingAcceptedReplies(req, res) {
       .limit(parseInt(limit))
       .populate({
         path: "postedBy",
-        model: "User", // Fixed typo: 'modal' -> 'model'
+        model: "User",
         select: "_id name profileImage role",
       });
 
