@@ -188,7 +188,6 @@ async function getRemainingAcceptedReplies(req, res) {
       parentComment: parentCommentIds,
       status: "accepted",
     })
-      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .populate({
