@@ -188,11 +188,24 @@ async function getRemainingAcceptedReplies(req, res) {
       parentComment: parentCommentIds,
       status: "accepted",
     })
+      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .populate({
         path: "postedBy",
         model: "User", // Fixed typo: 'modal' -> 'model'
+        select: "_id name profileImage role",
+      });
+
+    // Get the last (most recent) accepted reply
+    const lastAcceptedReply = await Comment.findOne({
+      parentComment: parentCommentIds,
+      status: "accepted",
+    })
+      .sort({ _id: -1 })
+      .populate({
+        path: "postedBy",
+        model: "User",
         select: "_id name profileImage role",
       });
 
@@ -202,7 +215,9 @@ async function getRemainingAcceptedReplies(req, res) {
       status: "accepted",
     });
 
-    res.status(200).json({ remainingReplies, totalAcceptedReplies });
+    res
+      .status(200)
+      .json({ remainingReplies, totalAcceptedReplies, lastAcceptedReply });
   } catch (err) {
     console.error("Error fetching replies:", err);
     res.status(500).json({ message: "Error fetching replies" });
