@@ -6,6 +6,7 @@ import {
   deleteBlogPost,
   getAcceptedBlogPosts,
   searchBlogPosts,
+  getBlogPostById,
 } from "../controllers/blogPostController.js";
 import authenticateUser from "../middleware/authMiddlewar.js";
 import updateInteraction from "../controllers/ineractionsController.js";
@@ -15,10 +16,13 @@ const router = express.Router();
 router.post("/", authenticateUser, createBlogPost);
 router.get("/accepted", getAcceptedBlogPosts);
 
+// API route for fetching a single blog post by ID
+router.get("/accepted/:id", getBlogPostById);
+
 // API route for deleting a blog post
 router.delete("/:id", authenticateUser, deleteBlogPost);
 
-// api route for search a blog post 
+// api route for search a blog post
 router.get("/search", searchBlogPosts);
 
 router.post("/:modelType/:id/:action", authenticateUser, updateInteraction);
