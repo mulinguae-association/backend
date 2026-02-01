@@ -12,7 +12,19 @@ export async function getUserNotifications(req, res) {
     const notificationsPromise = Notification.find({ user: userId })
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .populate([
+        {
+          path: "sourceId",
+          model: "BlogPost",
+          select: "_id postedBy",
+          populate: {
+            path: "postedBy",
+            model: "User",
+            select: "_id name profileImage role",
+          },
+        },
+      ]);
 
     // Get total and unread counts
     const totalPromise = Notification.countDocuments({ user: userId });
@@ -35,9 +47,6 @@ export async function getUserNotifications(req, res) {
       limit,
       hasMore: skip + notifications.length < total,
     });
-    console.log("Notifications fetched for user:", total);
-    console.log("Unread notifications for user:", unread);
-    console.log("Unread notifications for user:", notifications);
   } catch (error) {
     console.error("Error fetching notifications:", error);
     res.status(500).json({ error: "An error occurred" });
