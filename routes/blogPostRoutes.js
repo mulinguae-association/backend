@@ -1,6 +1,6 @@
 import express from "express";
 import {
-  createBlogPost,
+  createOrEditBlogPost,
   getPendingBlogPosts,
   acceptBlogPost,
   deleteBlogPost,
@@ -12,8 +12,8 @@ import authenticateUser from "../middleware/authMiddlewar.js";
 import updateInteraction from "../controllers/ineractionsController.js";
 const router = express.Router();
 
-// API route for submitting a blog post
-router.post("/", authenticateUser, createBlogPost);
+// API route for creating or editing a blog post (merged)
+router.post("/", authenticateUser, createOrEditBlogPost);
 router.get("/accepted", getAcceptedBlogPosts);
 
 // API route for fetching a single blog post by ID

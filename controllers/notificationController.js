@@ -7,9 +7,15 @@ export async function getUserNotifications(req, res) {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
+    const filter = req.query.filter || "all";
+
+    // Build filter query
+    let notificationQuery = { user: userId };
+    if (filter === "read") notificationQuery.isRead = true;
+    if (filter === "unread") notificationQuery.isRead = false;
 
     // Get notifications for the page
-    const notificationsPromise = Notification.find({ user: userId })
+    const notificationsPromise = Notification.find(notificationQuery)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -26,17 +32,20 @@ export async function getUserNotifications(req, res) {
         },
       ]);
 
-    // Get total and unread counts
+    // Get total and unread counts (always for all notifications)
     const totalPromise = Notification.countDocuments({ user: userId });
     const unreadPromise = Notification.countDocuments({
       user: userId,
       isRead: false,
     });
+    // Get count for current filter
+    const filterCountPromise = Notification.countDocuments(notificationQuery);
 
-    const [notifications, total, unread] = await Promise.all([
+    const [notifications, total, unread, filterCount] = await Promise.all([
       notificationsPromise,
       totalPromise,
       unreadPromise,
+      filterCountPromise,
     ]);
 
     res.status(200).json({
@@ -45,7 +54,9 @@ export async function getUserNotifications(req, res) {
       unread, // <--- This is the unread count for the badge
       page,
       limit,
-      hasMore: skip + notifications.length < total,
+      filterCount,
+      hasMore:
+        skip + notifications.length < filterCount && notifications.length > 0,
     });
   } catch (error) {
     console.error("Error fetching notifications:", error);
@@ -76,6 +87,28 @@ export async function markAllNotificationsRead(req, res) {
     res.status(200).json({ message: "All notifications marked as read" });
   } catch (error) {
     console.error("Error marking all notifications as read:", error);
+    res.status(500).json({ error: "An error occurred" });
+  }
+}
+
+// Delete multiple notifications by IDs for the authenticated user
+export async function deleteNotifications(req, res) {
+  try {
+    const userId = req.userId;
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "No notification IDs provided" });
+    }
+    // Only delete notifications belonging to the user
+    const result = await Notification.deleteMany({
+      _id: { $in: ids },
+      user: userId,
+    });
+    res
+      .status(200)
+      .json({ message: `Deleted ${result.deletedCount} notifications.` });
+  } catch (error) {
+    console.error("Error deleting notifications:", error);
     res.status(500).json({ error: "An error occurred" });
   }
 }

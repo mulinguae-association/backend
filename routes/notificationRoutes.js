@@ -3,6 +3,7 @@ import {
   getUserNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  deleteNotifications,
 } from "../controllers/notificationController.js";
 import authenticateUser from "../middleware/authMiddlewar.js";
 
@@ -14,5 +15,7 @@ router.get("/", authenticateUser, getUserNotifications);
 router.patch("/:id/read", authenticateUser, markNotificationRead);
 // Mark all notifications as read
 router.patch("/read-all", authenticateUser, markAllNotificationsRead);
+// Delete multiple notifications by IDs
+router.delete("/bulk-delete", authenticateUser, deleteNotifications);
 
 export default router;

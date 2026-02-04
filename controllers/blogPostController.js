@@ -6,36 +6,84 @@ const userPouplate = {
   select: "_id name profileImage role",
 };
 
-export async function createBlogPost(req, res) {
+// Merged create and edit blog post controller
+export async function createOrEditBlogPost(req, res) {
   try {
-    const { title, subTitle, content, senderSocketId } = req.body;
-    const authorId = req.userId;
-    const blogPost = await BlogPost.create({
-      title,
-      subTitle,
-      content,
-      postedBy: authorId,
-      status: req.role === "admin" ? "accepted" : "pending",
-    });
+    const { id, title, subTitle, content, senderSocketId } = req.body;
+    const userId = req.userId;
+    const isEdit = !!id;
 
-    // Only send notifications and emit real-time event if post is accepted
-    if (blogPost.status === "accepted") {
-      // Populate postedBy before notification
-      const populatedBlogPost = await BlogPost.findById(blogPost._id)
-        .populate(userPouplate)
-        .lean();
-
-      const { notifyBlogPost } = await import("../utils/notifyBlogPost.js");
-      await notifyBlogPost(populatedBlogPost, senderSocketId);
+    // ---- Validation ----
+    if (!title?.trim() || !content?.trim()) {
+      return res.status(400).json({
+        error: "Title and content are required.",
+      });
     }
 
-    return res.json({
-      message: "Blog post submitted successfully",
-      blogPost: blogPost.toObject(),
+    let blogPost;
+
+    // ---- Edit flow ----
+    if (isEdit) {
+      blogPost = await BlogPost.findById(id);
+
+      if (!blogPost) {
+        return res.status(404).json({ error: "Blog post not found" });
+      }
+
+      const isOwner = blogPost.postedBy.toString() === userId.toString();
+      const isAdmin = req.role === "admin";
+
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({
+          error: "No permission to edit blog post",
+        });
+      }
+
+      blogPost.title = title;
+      blogPost.subTitle = subTitle;
+      blogPost.content = content;
+
+      // Non-admin edits go back to pending
+      if (!isAdmin) {
+        blogPost.status = "pending";
+      }
+
+      await blogPost.save();
+    }
+
+    // ---- Create flow ----
+    if (!isEdit) {
+      blogPost = await BlogPost.create({
+        title,
+        subTitle,
+        content,
+        postedBy: userId,
+        status: req.role === "admin" ? "accepted" : "pending",
+      });
+    }
+
+    // ---- Populate once ----
+    const populatedBlogPost = await BlogPost.findById(blogPost._id)
+      .populate(userPouplate)
+      .lean();
+
+    // ---- Notifications only if accepted ----
+    if (populatedBlogPost.status === "accepted") {
+      const { notifyBlogPost } = await import("../utils/notifyBlogPost.js");
+      await notifyBlogPost(populatedBlogPost, senderSocketId ?? null);
+    }
+
+    return res.status(isEdit ? 200 : 201).json({
+      message: isEdit
+        ? "Blog post updated successfully"
+        : "Blog post submitted successfully",
+      blogPost: populatedBlogPost,
     });
   } catch (error) {
-    console.error("Error submitting blog post:", error);
-    return res.json({ error: "An error occurred" });
+    console.error("Error creating/editing blog post:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+    });
   }
 }
 
@@ -112,10 +160,10 @@ export async function getAcceptedBlogPosts(req, res) {
   try {
     const limit = parseInt(req.query.limit) || 5;
     const acceptedPosts = await BlogPost.find({ status: "accepted" })
-      .sort({ createdAt: -1 })
+      .sort({ updatedAt: -1 })
       .limit(limit)
       .populate(userPouplate)
-      .lean();
+      .sort({ createdAt: -1 });
     res.status(200).json(acceptedPosts);
   } catch (error) {
     console.error("Error retrieving accepted blog posts:", error);
