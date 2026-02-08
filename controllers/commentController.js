@@ -4,6 +4,11 @@ import BlogPost from "../db/models/BlogPost.js";
 import Comment from "../db/models/Comment.js";
 import User from "../db/models/User.js";
 
+const userPouplate = {
+  path: "postedBy",
+  select: "_id name profileImage role",
+};
+
 // Define your functions
 async function createComment(req, res) {
   try {
@@ -113,10 +118,17 @@ async function getPendingComments(req, res) {
     if (req.role !== "admin") {
       return res.status(403).json({ error: "No permission." });
     }
-    const pendingComments = await Comment.find({ status: "pending" }).populate({
-      path: "replies",
-      model: "Comment",
-    });
+    const pendingComments = await Comment.find({ status: "pending" }).populate([
+      {
+        path: "replies",
+        model: "Comment",
+      },
+      {
+        path: "postedBy",
+        model: "User",
+        select: "_id name profileImage role",
+      },
+    ]);
     res.status(200).json(pendingComments);
   } catch (error) {
     console.error("Error retrieving blog posts:", error);
@@ -138,11 +150,7 @@ async function getAcceptedComments(req, res) {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
-      .populate({
-        path: "postedBy",
-        model: "User",
-        select: "_id name profileImage role",
-      });
+      .populate(userPouplate);
 
     const totalComments = await Comment.aggregate([
       {
@@ -189,11 +197,7 @@ async function getRemainingAcceptedReplies(req, res) {
     })
       .skip(skip)
       .limit(parseInt(limit))
-      .populate({
-        path: "postedBy",
-        model: "User",
-        select: "_id name profileImage role",
-      });
+      .populate(userPouplate);
 
     // Get the last (most recent) accepted reply
     const lastAcceptedReply = await Comment.findOne({
@@ -201,11 +205,7 @@ async function getRemainingAcceptedReplies(req, res) {
       status: "accepted",
     })
       .sort({ _id: -1 })
-      .populate({
-        path: "postedBy",
-        model: "User",
-        select: "_id name profileImage role",
-      });
+      .populate(userPouplate);
 
     // Also return total accepted replies count for the parent comment
     const totalAcceptedReplies = await Comment.countDocuments({

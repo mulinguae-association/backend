@@ -7,10 +7,12 @@ import {
   getAcceptedBlogPosts,
   searchBlogPosts,
   getBlogPostById,
+  getMyBlogPosts,
 } from "../controllers/blogPostController.js";
 import authenticateUser from "../middleware/authMiddlewar.js";
 import updateInteraction from "../controllers/ineractionsController.js";
 const router = express.Router();
+
 
 // API route for creating or editing a blog post (merged)
 router.post("/", authenticateUser, createOrEditBlogPost);
@@ -24,6 +26,9 @@ router.delete("/:id", authenticateUser, deleteBlogPost);
 
 // api route for search a blog post
 router.get("/search", searchBlogPosts);
+
+// API route for fetching current user's blog posts
+router.get("/my-posts", authenticateUser, getMyBlogPosts);
 
 router.post("/:modelType/:id/:action", authenticateUser, updateInteraction);
 // admin only

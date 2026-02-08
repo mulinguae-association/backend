@@ -96,6 +96,7 @@ export async function getPendingBlogPosts(req, res) {
       .sort({
         createdAt: -1,
       })
+      .populate(userPouplate)
       .lean();
 
     res.status(200).json(pendingPosts);
@@ -121,6 +122,12 @@ export async function acceptBlogPost(req, res) {
       { new: true },
     ).populate(userPouplate);
 
+    if (!blogPost) {
+      return res
+        .status(404)
+        .json({ error: "Blog post not found or already accepted" });
+    }
+
     const { notifyBlogPost } = await import("../utils/notifyBlogPost.js");
     await notifyBlogPost(blogPost, null);
     return res.status(200).json({ message: "Blog post accepted successfully" });
@@ -139,28 +146,47 @@ export async function deleteBlogPost(req, res) {
     if (!blogPost) {
       return res.status(404).json({ error: "Blog post not found" });
     }
-    if (blogPost.authorId == userId || req.role === "admin") {
-      await BlogPost.findByIdAndDelete(id);
-      // Remove related notifications
-      const { default: Notification } =
-        await import("../db/models/Notification.js");
-      await Notification.deleteMany({ sourceType: "blog", sourceId: id });
-      return res.json({
-        message: "Blog post and related notifications deleted successfully",
-      });
-    } else {
-      return res.json({ error: "No permission to delete blog post" });
+
+    // Normalize postedBy whether populated or ObjectId
+    const ownerId =
+      blogPost.postedBy && blogPost.postedBy._id
+        ? blogPost.postedBy._id.toString()
+        : (blogPost.postedBy || "").toString();
+
+    const isOwner = ownerId === userId.toString();
+    const isAdmin = req.role === "admin";
+
+    if (!isOwner && !isAdmin) {
+      return res
+        .status(403)
+        .json({ error: "No permission to delete blog post" });
     }
+
+    await BlogPost.findByIdAndDelete(id);
+
+    // Remove any related notifications
+    const { default: Notification } =
+      await import("../db/models/Notification.js");
+    await Notification.deleteMany({ sourceType: "blog", sourceId: id });
+
+    return res.status(200).json({
+      message: "Blog post and related notifications deleted successfully",
+    });
   } catch (error) {
-    return res.json({ error: "An error occurred" });
+    console.error("Error deleting blog post:", error);
+    return res.status(500).json({ error: "An error occurred" });
   }
 }
 
 export async function getAcceptedBlogPosts(req, res) {
   try {
     const limit = parseInt(req.query.limit) || 5;
-    const acceptedPosts = await BlogPost.find({ status: "accepted" })
-      .sort({ updatedAt: -1 })
+    const userId = req.query.userId;
+    const filter = { status: "accepted" };
+    if (userId) filter.postedBy = userId;
+
+    const acceptedPosts = await BlogPost.find(filter)
+
       .limit(limit)
       .populate(userPouplate)
       .sort({ createdAt: -1 });
@@ -185,6 +211,24 @@ export async function getBlogPostById(req, res) {
   } catch (error) {
     console.error("Error fetching blog post:", error);
     res.status(500).json({ error: "An error occurred" });
+  }
+}
+
+// Handler to fetch current user's blog posts
+export async function getMyBlogPosts(req, res) {
+  try {
+    const userId = req.userId;
+    const limit = parseInt(req.query.limit) || 5;
+
+    const myPosts = await BlogPost.find({ postedBy: userId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .populate(userPouplate)
+      .lean();
+    return res.status(200).json(myPosts);
+  } catch (error) {
+    console.error("Error fetching user's blog posts:", error);
+    return res.status(500).json({ error: "An error occurred" });
   }
 }
 
