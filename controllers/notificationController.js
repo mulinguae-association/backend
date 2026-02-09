@@ -3,7 +3,7 @@ import Notification from "../db/models/Notification.js";
 // Get notifications for the logged-in user with pagination
 export async function getUserNotifications(req, res) {
   try {
-    const userId = req.userId;
+    const userId = req.user._id;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -79,7 +79,7 @@ export async function markNotificationRead(req, res) {
 // Mark all notifications as read
 export async function markAllNotificationsRead(req, res) {
   try {
-    const userId = req.userId;
+    const userId = req.user._id;
     await Notification.updateMany(
       { user: userId, isRead: false },
       { isRead: true },
@@ -94,7 +94,7 @@ export async function markAllNotificationsRead(req, res) {
 // Delete multiple notifications by IDs for the authenticated user
 export async function deleteNotifications(req, res) {
   try {
-    const userId = req.userId;
+    const userId = req.user._id;
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: "No notification IDs provided" });

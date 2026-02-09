@@ -87,7 +87,6 @@ export const deleteUser = async (req, res) => {
         fields: "_id name email role status deactivatedAt profileImage terms",
       },
     );
-    if (!user) return res.status(404).json({ error: "User not found" });
     res.json({ message: "User deactivated", user });
   } catch (err) {
     res.status(500).json({ error: "Failed to deactivate user" });

@@ -17,7 +17,11 @@ const userSchema = new mongoose.Schema({
     required: false,
   },
   terms: { type: Boolean, default: false },
-  role: { type: String, enum: ["admin", "user"], default: "user" },
+  role: {
+    type: String,
+    enum: ["superadmin", "admin", "user"],
+    default: "user",
+  },
   status: {
     type: String,
     enum: ["active", "deactivated"],

@@ -9,6 +9,7 @@ import { sendEmail } from "../utils/emailSender.js";
 import { validateHuman } from "../utils/validateHuman.js";
 import validator from "validator";
 import { handleUpload, cloudinary } from "../utils/cloundinaryConfig.js";
+
 async function register(req, res) {
   try {
     const { name, email, password, confirmPassword, terms, token } = req.body;
@@ -109,23 +110,20 @@ async function login(req, res) {
     return res.status(500).json({ error: "Internal server error" });
   }
 }
-const getProfile = (req, res) => {
-  const { token } = req.cookies;
-  jwt.verify(
-    token,
-    process.env.JWT_SECRET,
-    { expiresIn: "3d" },
-    (err, user) => {
-      if (err) {
-        if (err.name === "TokenExpiredError") {
-          return res.status(401).json({ message: "Token Expired" });
-        }
-        // Handle other JWT errors here, if needed
-        return res.status(401).json({ message: "Invalid token." });
-      }
-      return res.json(user);
-    },
-  );
+const getProfile = async (req, res) => {
+  try {
+    const user = req.user;
+
+    console.log(user);
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    return res.json(user);
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
 };
 
 const logout = (req, res) => {
@@ -247,7 +245,7 @@ function generateToken(user) {
 async function updateProfile(req, res) {
   const { name, email } = req.body;
 
-  const userId = req.userId;
+  const userId = req.user._id;
   try {
     if (!name && !email && !req.file) {
       return res

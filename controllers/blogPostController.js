@@ -10,7 +10,7 @@ const userPouplate = {
 export async function createOrEditBlogPost(req, res) {
   try {
     const { id, title, subTitle, content, senderSocketId } = req.body;
-    const userId = req.userId;
+    const userId = req.user._id;
     const isEdit = !!id;
 
     // ---- Validation ----
@@ -31,7 +31,7 @@ export async function createOrEditBlogPost(req, res) {
       }
 
       const isOwner = blogPost.postedBy.toString() === userId.toString();
-      const isAdmin = req.role === "admin";
+      const isAdmin = req.user.role === "admin";
 
       if (!isOwner && !isAdmin) {
         return res.status(403).json({
@@ -58,7 +58,7 @@ export async function createOrEditBlogPost(req, res) {
         subTitle,
         content,
         postedBy: userId,
-        status: req.role === "admin" ? "accepted" : "pending",
+        status: req.user.role === "admin" ? "accepted" : "pending",
       });
     }
 
@@ -89,7 +89,7 @@ export async function createOrEditBlogPost(req, res) {
 
 export async function getPendingBlogPosts(req, res) {
   try {
-    if (req.role !== "admin") {
+    if (req.user.role !== "admin") {
       return res.status(403).json({ error: "No permission." });
     }
     const pendingPosts = await BlogPost.find({ status: "pending" })
@@ -110,7 +110,7 @@ export async function acceptBlogPost(req, res) {
   try {
     const { id } = req.params;
 
-    if (req.role !== "admin") {
+    if (req.user.role !== "admin") {
       return res.status(403).json({ error: "No permission." });
     }
 
@@ -140,7 +140,7 @@ export async function acceptBlogPost(req, res) {
 export async function deleteBlogPost(req, res) {
   try {
     const { id } = req.params;
-    const userId = req.userId;
+    const userId = req.user._id;
 
     const blogPost = await BlogPost.findById(id);
     if (!blogPost) {
@@ -154,7 +154,7 @@ export async function deleteBlogPost(req, res) {
         : (blogPost.postedBy || "").toString();
 
     const isOwner = ownerId === userId.toString();
-    const isAdmin = req.role === "admin";
+    const isAdmin = req.user.role === "admin";
 
     if (!isOwner && !isAdmin) {
       return res
@@ -217,7 +217,7 @@ export async function getBlogPostById(req, res) {
 // Handler to fetch current user's blog posts
 export async function getMyBlogPosts(req, res) {
   try {
-    const userId = req.userId;
+    const userId = req.user._id;
     const limit = parseInt(req.query.limit) || 5;
 
     const myPosts = await BlogPost.find({ postedBy: userId })

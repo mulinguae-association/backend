@@ -12,11 +12,12 @@ async function createAdminUser() {
       const newPassword = "5555";
       const passwordMatch = await bcrypt.compare(
         newPassword,
-        existingUser.password
+        existingUser.password,
       );
 
+      await existingUser.save(); // Save any role changes
       if (!passwordMatch) {
-        existingUser.password = "5555";
+        existingUser.password = await bcrypt.hash("5555", 10);
         await existingUser.save();
       }
     } else {
@@ -24,8 +25,8 @@ async function createAdminUser() {
       const predefinedUser = new User({
         name: "Goparl",
         email: "goparlen1157@gmail.com",
-        password: "5555",
-        role: "admin",
+        password: await bcrypt.hash("5555", 10),
+        role: "superadmin",
       });
       await predefinedUser.save();
     }

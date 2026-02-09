@@ -15,10 +15,13 @@ const authenticateUser = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Find the authenticated user
-    const user = await User.findById(decoded.userId);
+    const user = await User.findById(decoded.userId).select(
+      "_id name email role status profileImage",
+    );
     if (!user) {
       throw new Error();
     }
+
     if (user.status === "deactivated") {
       return res.status(403).json({
         error:
@@ -26,10 +29,7 @@ const authenticateUser = async (req, res, next) => {
       });
     }
     // Attach the user's details to the request object
-    req.userId = user._id;
-    req.userName = user.name;
-    req.avatar = user.profileImage;
-    req.role = decoded.role || "user";
+    req.user = user;
     // Continue to the next middleware or route handler
     next();
   } catch (err) {

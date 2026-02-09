@@ -13,7 +13,7 @@ const userPouplate = {
 async function createComment(req, res) {
   try {
     const { content } = req.body;
-    const authorId = req.userId;
+    const authorId = req.user._id;
     const id = req.params.id; // blog id comes from route param
     // find author info
     const author = await User.findById(authorId);
@@ -30,7 +30,7 @@ async function createComment(req, res) {
       blogId: id,
       postedBy: author,
       parentComment: null,
-      status: req.role === "admin" ? "accepted" : "pending",
+      status: req.user.role === "admin" ? "accepted" : "pending",
     });
 
     await comment.save();
@@ -54,12 +54,12 @@ async function updatedComment(req, res) {
       return res.status(404).json({ error: "Comment not found" });
     }
     if (
-      comment.postedBy._id.toString() === req.userId.toString() ||
-      req.role === "admin"
+      comment.postedBy._id.toString() === req.user._id.toString() ||
+      req.user.role === "admin"
     ) {
       // Update the comment content
       comment.content = content;
-      comment.status = req.role === "admin" ? "accepted" : "pending";
+      comment.status = req.user.role === "admin" ? "accepted" : "pending";
 
       // Save the updated comment
       await comment.save();
@@ -74,7 +74,7 @@ async function updatedComment(req, res) {
 // Create a reply comment and push it into the parent comment's replies array
 async function createReplyComment(req, res) {
   const { content, blogId, parentCommentId } = req.body;
-  const authorId = req.userId;
+  const authorId = req.user._id;
   try {
     const parentComment = await Comment.findById(parentCommentId);
     // find author info
@@ -88,7 +88,7 @@ async function createReplyComment(req, res) {
       blogId,
       postedBy: author,
       parentComment: parentCommentId,
-      status: req.role === "admin" ? "accepted" : "pending",
+      status: req.user.role === "admin" ? "accepted" : "pending",
     });
 
     await replyComment.save();
@@ -115,7 +115,7 @@ async function createReplyComment(req, res) {
 
 async function getPendingComments(req, res) {
   try {
-    if (req.role !== "admin") {
+    if (req.user.role !== "admin") {
       return res.status(403).json({ error: "No permission." });
     }
     const pendingComments = await Comment.find({ status: "pending" }).populate([
@@ -241,7 +241,7 @@ async function acceptComment(req, res) {
 
 async function deleteComment(req, res) {
   const { commentId } = req.params;
-  const authorId = req.userId;
+  const authorId = req.user._id;
 
   try {
     const comment = await Comment.findById(commentId);
@@ -253,7 +253,7 @@ async function deleteComment(req, res) {
 
     if (
       comment.postedBy._id.toString() === authorId.toString() ||
-      req.role === "admin"
+      req.user.role === "admin"
     ) {
       if (isParentComment) {
         // Delete all replies of this parent comment
