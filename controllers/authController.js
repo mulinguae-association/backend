@@ -68,6 +68,12 @@ async function login(req, res) {
     if (!user) {
       return res.json({ error: "Invalid Credentials" });
     }
+    if (user.status === "deactivated") {
+      return res.status(403).json({
+        error:
+          "Your account is deactivated. Please contact support or an administrator.",
+      });
+    }
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return res.json({ error: "Invalid Credentials" });
