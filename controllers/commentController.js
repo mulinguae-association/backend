@@ -30,7 +30,9 @@ async function createComment(req, res) {
       blogId: id,
       postedBy: author,
       parentComment: null,
-      status: req.user.role === "admin" ? "accepted" : "pending",
+      status: ["admin", "superadmin"].includes(req.user.role)
+        ? "accepted"
+        : "pending",
     });
 
     await comment.save();
@@ -55,11 +57,13 @@ async function updatedComment(req, res) {
     }
     if (
       comment.postedBy._id.toString() === req.user._id.toString() ||
-      req.user.role === "admin"
+      ["admin", "superadmin"].includes(req.user.role)
     ) {
       // Update the comment content
       comment.content = content;
-      comment.status = req.user.role === "admin" ? "accepted" : "pending";
+      comment.status = ["admin", "superadmin"].includes(req.user.role)
+        ? "accepted"
+        : "pending";
 
       // Save the updated comment
       await comment.save();
@@ -88,7 +92,9 @@ async function createReplyComment(req, res) {
       blogId,
       postedBy: author,
       parentComment: parentCommentId,
-      status: req.user.role === "admin" ? "accepted" : "pending",
+      status: ["admin", "superadmin"].includes(req.user.role)
+        ? "accepted"
+        : "pending",
     });
 
     await replyComment.save();
@@ -115,7 +121,7 @@ async function createReplyComment(req, res) {
 
 async function getPendingComments(req, res) {
   try {
-    if (req.user.role !== "admin") {
+    if (!["admin", "superadmin"].includes(req.user.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     const pendingComments = await Comment.find({ status: "pending" }).populate([
@@ -253,7 +259,7 @@ async function deleteComment(req, res) {
 
     if (
       comment.postedBy._id.toString() === authorId.toString() ||
-      req.user.role === "admin"
+      ["admin", "superadmin"].includes(req.user.role)
     ) {
       if (isParentComment) {
         // Delete all replies of this parent comment

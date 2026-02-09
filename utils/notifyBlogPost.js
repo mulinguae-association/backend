@@ -18,7 +18,9 @@ export async function notifyBlogPost(blogPost, senderSocketId = null) {
 
   // Notification for the author (only if not admin)
   let createdNotifications = [];
-  const isAuthorAdmin = blogPost.postedBy?.role === "admin";
+  const isAuthorAdmin = ["admin", "superadmin"].includes(
+    blogPost.postedBy?.role,
+  );
   let notificationsToInsert = [...notifications];
   if (!isAuthorAdmin) {
     const authorNotification = {

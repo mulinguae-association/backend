@@ -4,7 +4,7 @@ import { __dirname } from "../utils/dirname.js";
 import { cloudinary, handleUpload } from "../utils/cloundinaryConfig.js";
 export const createTeacherCard = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!["admin", "superadmin"].includes(req.user.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     const {
@@ -63,7 +63,7 @@ export const updateTeacherCard = async (req, res) => {
     const teacherId = req.params.id;
     const { firstName, lastName, email, jobBrief, telephone, aboutTeacher } =
       req.body;
-    if (req.user.role !== "admin") {
+    if (!["admin", "superadmin"].includes(req.user.role)) {
       return res.status(403).json({ error: "No permission." });
     }
 
@@ -142,7 +142,7 @@ export const getTeachersCard = async (req, res) => {
 
 export const deleteTeacherCard = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
+    if (!["admin", "superadmin"].includes(req.user.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     const teacherId = req.params.id;

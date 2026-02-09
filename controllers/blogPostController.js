@@ -31,7 +31,7 @@ export async function createOrEditBlogPost(req, res) {
       }
 
       const isOwner = blogPost.postedBy.toString() === userId.toString();
-      const isAdmin = req.user.role === "admin";
+      const isAdmin = ["admin", "superadmin"].includes(req.user.role);
 
       if (!isOwner && !isAdmin) {
         return res.status(403).json({
@@ -58,7 +58,9 @@ export async function createOrEditBlogPost(req, res) {
         subTitle,
         content,
         postedBy: userId,
-        status: req.user.role === "admin" ? "accepted" : "pending",
+        status: ["admin", "superadmin"].includes(req.user.role)
+          ? "accepted"
+          : "pending",
       });
     }
 
@@ -89,7 +91,7 @@ export async function createOrEditBlogPost(req, res) {
 
 export async function getPendingBlogPosts(req, res) {
   try {
-    if (req.user.role !== "admin") {
+    if (!["admin", "superadmin"].includes(req.user.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     const pendingPosts = await BlogPost.find({ status: "pending" })
@@ -110,7 +112,7 @@ export async function acceptBlogPost(req, res) {
   try {
     const { id } = req.params;
 
-    if (req.user.role !== "admin") {
+    if (!["admin", "superadmin"].includes(req.user.role)) {
       return res.status(403).json({ error: "No permission." });
     }
 
@@ -154,7 +156,7 @@ export async function deleteBlogPost(req, res) {
         : (blogPost.postedBy || "").toString();
 
     const isOwner = ownerId === userId.toString();
-    const isAdmin = req.user.role === "admin";
+    const isAdmin = ["admin", "superadmin"].includes(req.user.role);
 
     if (!isOwner && !isAdmin) {
       return res
