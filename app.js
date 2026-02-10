@@ -72,9 +72,6 @@ export { io };
 // For Railway to handle the proxy correctly
 app.set("trust proxy", 1);
 
-// For Railway to handle the proxy correctly
-app.set("trust proxy", 1);
-
 // Root route for backend status
 app.get("/", (req, res) => {
   res.send("Mulingua Backend is running!");
@@ -100,11 +97,6 @@ app.use(async (req, res, next) => {
 app.use("/uploads", express.static("uploads"));
 app.use("/api", routes);
 
-if (!process.env.VERCEL) {
-  server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
-}
-
-export default app;
 if (!process.env.VERCEL) {
   server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
 }
