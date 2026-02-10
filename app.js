@@ -19,11 +19,15 @@ import {
 
 const app = express();
 const server = http.createServer(app);
+
+// Update this part:
 const io = new Server(server, {
   cors: {
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    methods: ["GET", "POST"], // Explicitly allow these
     credentials: true,
   },
+  transports: ["websocket", "polling"],
 });
 
 const PORT = process.env.PORT || 5000;
@@ -73,6 +77,9 @@ io.on("connection", (socket) => {
 });
 
 export { io };
+
+// For Railway to handle the proxy correctly
+app.set("trust proxy", 1);
 
 // Root route for backend status
 app.get("/", (req, res) => {
