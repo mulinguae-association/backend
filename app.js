@@ -69,6 +69,9 @@ io.on("connection", (socket) => {
 
 export { io };
 
+// For Railway to handle the proxy correctly
+app.set("trust proxy", 1);
+
 // Root route for backend status
 app.get("/", (req, res) => {
   res.send("Mulingua Backend is running!");
