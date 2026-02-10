@@ -7,11 +7,9 @@ import { connectToDatabase } from "./db/db.js";
 import createAdminUser from "./utils/createAdminUser.js";
 import cookieParser from "cookie-parser";
 import compression from "compression";
+import { initSocket } from "./utils/socketInstance.js";
 dotenv.config(); // Load environment variables from .env
-
 import http from "http";
-
-import { Server } from "socket.io";
 import {
   addOnlineUser,
   removeOnlineUserBySocket,
@@ -19,12 +17,12 @@ import {
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
-    credentials: true,
-  },
-});
+
+// Update this part:
+const io = initSocket(
+  server,
+  process.env.FRONTEND_URL || "http://localhost:3000",
+);
 
 const PORT = process.env.PORT || 5000;
 app.use(bodyParser.json());
@@ -58,8 +56,6 @@ connectToDatabase()
 
 // Socket.IO connection handler
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
-  // Expect the client to emit an event with their userId after connecting
   socket.on("register", (userId) => {
     if (userId) {
       addOnlineUser(userId, socket.id);
@@ -68,7 +64,6 @@ io.on("connection", (socket) => {
   });
   socket.on("disconnect", () => {
     removeOnlineUserBySocket(socket.id);
-    console.log("User disconnected:", socket.id);
   });
 });
 

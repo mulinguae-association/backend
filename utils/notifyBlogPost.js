@@ -1,5 +1,5 @@
 import User from "../db/models/User.js";
-
+import { getIO } from "./socketInstance.js";
 export async function notifyBlogPost(blogPost, senderSocketId = null) {
   const users = await User.find({ _id: { $ne: blogPost.postedBy } });
   // Notifications for all users except author
@@ -44,7 +44,7 @@ export async function notifyBlogPost(blogPost, senderSocketId = null) {
 
   // Emit real-time notification only to online users
   try {
-    const { io } = await import("../app.js");
+    const io = getIO();
     const { getSocketIdByUserId } = await import("./onlineUsers.js");
     const { default: BlogPost } = await import("../db/models/BlogPost.js");
     // Cache for blog post details to avoid repeated DB queries
