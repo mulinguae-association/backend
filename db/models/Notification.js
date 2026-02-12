@@ -9,7 +9,10 @@ const notificationSchema = new mongoose.Schema({
   isRead: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   sourceType: { type: String }, // e.g., 'blog', 'comment', etc.
-  sourceId: { type: mongoose.Schema.Types.ObjectId }, // references the related document
+  sourceId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "BlogPost",
+  },
 });
 
 const Notification = mongoose.model("Notification", notificationSchema);

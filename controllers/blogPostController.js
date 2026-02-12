@@ -9,7 +9,7 @@ const userPouplate = {
 // Merged create and edit blog post controller
 export async function createOrEditBlogPost(req, res) {
   try {
-    const { id, title, subTitle, content, senderSocketId } = req.body;
+    const { id, title, subTitle, content } = req.body;
     const userId = req.user._id;
     const isEdit = !!id;
 
@@ -71,8 +71,35 @@ export async function createOrEditBlogPost(req, res) {
 
     // ---- Notifications only if accepted ----
     if (populatedBlogPost.status === "accepted") {
-      const { notifyBlogPost } = await import("../utils/notifyBlogPost.js");
-      await notifyBlogPost(populatedBlogPost, senderSocketId ?? null);
+      const { notifyUsers } =
+        await import("../utils/notifications/blogs/notifyUsers.js");
+
+      await notifyUsers({
+        users: { _id: { $ne: blogPost.postedBy._id } },
+        type: "blog",
+        messageKey: "notifications.blogAdded",
+        messageParams: {
+          blogTitle: blogPost.title,
+          author: populatedBlogPost.postedBy?.name || "Someone",
+        },
+        link: `/pages/blogs/${blogPost._id}`,
+        sourceType: "blog",
+        sourceId: blogPost._id,
+      });
+    } else {
+      const { sendAdminNotification } =
+        await import("../utils/notifications/sendAdminNotification.js");
+      sendAdminNotification({
+        type: "blog",
+        messageKey: "notifications.blogNeedsReview",
+        messageParams: {
+          blogTitle: populatedBlogPost.title,
+          author: populatedBlogPost.postedBy?.name || "Someone",
+        },
+        link: `/admin/dashboard/blogs/pending/${populatedBlogPost._id}`,
+        sourceType: "blog",
+        sourceId: populatedBlogPost._id,
+      });
     }
 
     return res.status(isEdit ? 200 : 201).json({
@@ -130,8 +157,19 @@ export async function acceptBlogPost(req, res) {
         .json({ error: "Blog post not found or already accepted" });
     }
 
-    const { notifyBlogPost } = await import("../utils/notifyBlogPost.js");
-    await notifyBlogPost(blogPost, null);
+    const { notifyUsers } =
+      await import("../utils/notifications/blogs/notifyUsers.js");
+    await notifyUsers({
+      users: [blogPost.postedBy._id], // notify only the author
+      type: "blog",
+      messageKey: "notifications.blogAccepted",
+      messageParams: {
+        blogTitle: blogPost.title,
+      },
+      link: `/pages/blogs/${blogPost._id}`,
+      sourceType: "blog",
+      sourceId: blogPost._id,
+    });
     return res.status(200).json({ message: "Blog post accepted successfully" });
   } catch (error) {
     console.error("Error accepting blog post:", error);
@@ -257,6 +295,26 @@ export async function searchBlogPosts(req, res) {
     res.status(200).json(searchResults);
   } catch (error) {
     console.error("Error searching blog posts:", error);
+    res.status(500).json({ error: "An error occurred" });
+  }
+}
+
+export async function getPendingBlogPostById(req, res) {
+  try {
+    const { id } = req.params;
+    const blogPost = await BlogPost.findOne({ _id: id, status: "pending" })
+      .populate({
+        path: "postedBy",
+        select: "_id name profileImage role",
+      })
+      .lean();
+
+    if (!blogPost) {
+      return res.status(404).json({ error: "Pending blog post not found" });
+    }
+    res.status(200).json(blogPost);
+  } catch (error) {
+    console.error("Error fetching pending blog post:", error);
     res.status(500).json({ error: "An error occurred" });
   }
 }

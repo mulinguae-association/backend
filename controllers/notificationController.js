@@ -22,7 +22,6 @@ export async function getUserNotifications(req, res) {
       .populate([
         {
           path: "sourceId",
-          model: "BlogPost",
           select: "_id postedBy",
           populate: {
             path: "postedBy",

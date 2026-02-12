@@ -8,11 +8,12 @@ import {
   searchBlogPosts,
   getBlogPostById,
   getMyBlogPosts,
+  getPendingBlogPostById,
 } from "../controllers/blogPostController.js";
 import authenticateUser from "../middleware/authMiddlewar.js";
+import roleMiddleware from "../middleware/roleMiddleware.js";
 import updateInteraction from "../controllers/ineractionsController.js";
 const router = express.Router();
-
 
 // API route for creating or editing a blog post (merged)
 router.post("/", authenticateUser, createOrEditBlogPost);
@@ -34,5 +35,13 @@ router.post("/:modelType/:id/:action", authenticateUser, updateInteraction);
 // admin only
 router.get("/pending", authenticateUser, getPendingBlogPosts);
 router.patch("/:id/accept", authenticateUser, acceptBlogPost);
+
+// admin only
+router.get(
+  "/pending/:id",
+  authenticateUser,
+  roleMiddleware("admin", "superadmin"),
+  getPendingBlogPostById,
+);
 
 export default router;
