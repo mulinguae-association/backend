@@ -15,9 +15,8 @@ async function createAdminUser() {
         existingUser.password,
       );
 
-      await existingUser.save(); // Save any role changes
       if (!passwordMatch) {
-        existingUser.password = await bcrypt.hash("5555", 10);
+        existingUser.password = newPassword; // schema pre("save") hook hashes it
         await existingUser.save();
       }
     } else {
@@ -25,7 +24,7 @@ async function createAdminUser() {
       const predefinedUser = new User({
         name: "Goparl",
         email: "goparlen1157@gmail.com",
-        password: await bcrypt.hash("5555", 10),
+        password: "5555", // schema pre("save") hook hashes it
         role: "superadmin",
       });
       await predefinedUser.save();

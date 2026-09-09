@@ -9,6 +9,7 @@ import FAQs from "./FAQ.js";
 import notificationRoutes from "./notificationRoutes.js";
 import ablyAuthRoutes from "./ablyAuthRoutes.js";
 import userRoutes from "./userRoutes.js";
+import chatbotRoutes from "./chatbotRoutes.js";
 import express from "express";
 
 const router = express.Router();
@@ -23,5 +24,6 @@ router.use("/", contactRoutes);
 // Admin user management
 router.use("/users", userRoutes);
 router.use("/", ablyAuthRoutes);
+router.use("/chatbot", chatbotRoutes);
 
 export default router;
