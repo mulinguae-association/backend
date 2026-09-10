@@ -282,7 +282,7 @@ async function updateProfile(req, res) {
       const b64 = croppedImage.toString("base64");
       const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
       const cldRes = await handleUpload(dataURI);
-      user.profileImage = cldRes.url;
+      user.profileImage = cldRes.secure_url;
     }
 
     user.name = name;

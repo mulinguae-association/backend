@@ -30,7 +30,7 @@ export const createTeacherCard = async (req, res) => {
       const b64 = croppedImage.toString("base64");
       let dataURI = "data:" + req.file.mimetype + ";base64," + b64;
       const cldRes = await handleUpload(dataURI, "teacherImg");
-      image = cldRes.url;
+      image = cldRes.secure_url;
     }
     const newTeacher = new Teacher({
       firstName,
@@ -100,7 +100,7 @@ export const updateTeacherCard = async (req, res) => {
       const b64 = croppedImage.toString("base64");
       let dataURI = "data:" + req.file.mimetype + ";base64," + b64;
       const cldRes = await handleUpload(dataURI, "teacherImg");
-      newImage = cldRes.url;
+      newImage = cldRes.secure_url;
     }
 
     teacher.firstName = firstName;
