@@ -1,5 +1,6 @@
 import BlogPost from "../db/models/BlogPost.js";
 import User from "../db/models/User.js";
+import { isAdminRole } from "../utils/isAdminRole.js";
 
 export async function createBlogPost(req, res) {
   try {
@@ -7,7 +8,7 @@ export async function createBlogPost(req, res) {
     const authorId = req.userId;
     const author = await User.findById(authorId)
     const blogPost = new BlogPost({ title, subTitle, content, postedBy: author });
-    req.role === "admin" ? blogPost.status = "accepted" : blogPost.status = "pending"
+    isAdminRole(req.role) ? blogPost.status = "accepted" : blogPost.status = "pending"
     await blogPost.save();
 
     return res.json({
@@ -22,7 +23,7 @@ export async function createBlogPost(req, res) {
 
 export async function getPendingBlogPosts(req, res) {
   try {
-    if (req.role !== "admin") {
+    if (!isAdminRole(req.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     const pendingPosts = await BlogPost.find({ status: "pending" });
@@ -36,7 +37,7 @@ export async function getPendingBlogPosts(req, res) {
 export async function acceptBlogPost(req, res) {
   try {
     const { id } = req.params;
-    if (req.role !== "admin") {
+    if (!isAdminRole(req.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     await BlogPost.findByIdAndUpdate(id, { status: "accepted" });
@@ -53,7 +54,7 @@ export async function deleteBlogPost(req, res) {
     const userId = req.userId;
 
     const blogPost = await BlogPost.findById(id);
-    if (blogPost.authorId == userId || req.role === "admin") {
+    if (blogPost.authorId == userId || isAdminRole(req.role)) {
       await BlogPost.findByIdAndDelete(id);
       return res
         .json({ message: "Blog post deleted successfully" });

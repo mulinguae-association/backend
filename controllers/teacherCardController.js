@@ -2,9 +2,10 @@ import Teacher from "../db/models/TeacherCard.js";
 import { convertToWebp } from "../utils/imageConversion.js";
 import { __dirname } from "../utils/dirname.js";
 import { cloudinary, handleUpload } from "../utils/cloundinaryConfig.js";
+import { isAdminRole } from "../utils/isAdminRole.js";
 export const createTeacherCard = async (req, res) => {
   try {
-    if (req.role !== "admin") {
+    if (!isAdminRole(req.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     const {
@@ -63,7 +64,7 @@ export const updateTeacherCard = async (req, res) => {
     const teacherId = req.params.id;
     const { firstName, lastName, email, jobBrief, telephone, aboutTeacher } =
       req.body;
-    if (req.role !== "admin") {
+    if (!isAdminRole(req.role)) {
       return res.status(403).json({ error: "No permission." });
     }
 
@@ -146,7 +147,7 @@ export const getTeachersCard = async (req, res) => {
 
 export const deleteTeacherCard = async (req, res) => {
   try {
-    if (req.role !== "admin") {
+    if (!isAdminRole(req.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     const teacherId = req.params.id;

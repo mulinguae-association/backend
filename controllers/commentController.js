@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import BlogPost from "../db/models/BlogPost.js";
 import Comment from "../db/models/Comment.js";
 import User from "../db/models/User.js";
+import { isAdminRole } from "../utils/isAdminRole.js";
 
 // Define your functions
 async function createComment(req, res) {
@@ -25,7 +26,7 @@ async function createComment(req, res) {
       blogId: id,
       postedBy: author,
       parentComment: null,
-      status: req.role === "admin" ? "accepted" : "pending",
+      status: isAdminRole(req.role) ? "accepted" : "pending",
     });
 
     await comment.save();
@@ -50,11 +51,11 @@ async function updatedComment(req, res) {
     }
     if (
       comment.postedBy._id.toString() === req.userId.toString() ||
-      req.role === "admin"
+      isAdminRole(req.role)
     ) {
       // Update the comment content
       comment.content = content;
-      comment.status = req.role === "admin" ? "accepted" : "pending";
+      comment.status = isAdminRole(req.role) ? "accepted" : "pending";
 
       // Save the updated comment
       await comment.save();
@@ -83,7 +84,7 @@ async function createReplyComment(req, res) {
       blogId,
       postedBy: author,
       parentComment: parentCommentId,
-      status: req.role === "admin" ? "accepted" : "pending",
+      status: isAdminRole(req.role) ? "accepted" : "pending",
     });
 
     await replyComment.save();
@@ -110,7 +111,7 @@ async function createReplyComment(req, res) {
 
 async function getPendingComments(req, res) {
   try {
-    if (req.role !== "admin") {
+    if (!isAdminRole(req.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     const pendingComments = await Comment.find({ status: "pending" }).populate({
@@ -253,7 +254,7 @@ async function deleteComment(req, res) {
 
     if (
       comment.postedBy._id.toString() === authorId.toString() ||
-      req.role === "admin"
+      isAdminRole(req.role)
     ) {
       if (isParentComment) {
         // Delete all replies of this parent comment
