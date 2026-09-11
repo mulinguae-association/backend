@@ -6,6 +6,7 @@ import contactRoutes from "./contactRoutes.js"
 import authRoute from './authRoutes.js'
 import FAQs from './FAQ.js';
 import express from 'express';
+import chatbotRoutes from './chatbotRoutes.js';
 
 const router = express.Router();
 
@@ -15,6 +16,7 @@ router.use("/comments", blogsComments);
 router.use("/auth", authRoute);
 router.use("/", FAQs);
 router.use("/", contactRoutes);
+router.use("/chatbot", chatbotRoutes);
 
 
 export default router;
