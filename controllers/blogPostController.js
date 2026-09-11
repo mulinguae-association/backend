@@ -71,16 +71,36 @@ export async function deleteBlogPost(req, res) {
 export async function getAcceptedBlogPosts(req, res) {
   try {
     const limit = parseInt(req.query.limit) || 5;
-    const acceptedPosts = await BlogPost.find({ status: "accepted" })
-      .sort({ createdAt: -1 })
-      .limit(limit)
+    const cursor = req.query.cursor;
+    const filter = { status: "accepted" };
+
+    if (cursor) {
+      const lastPost = await BlogPost.findById(cursor).select("createdAt _id").lean();
+      if (lastPost) {
+        filter.$or = [
+          { createdAt: { $lt: lastPost.createdAt } },
+          { createdAt: lastPost.createdAt, _id: { $lt: lastPost._id } },
+        ];
+      }
+    }
+
+    const posts = await BlogPost.find(filter)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limit + 1)
       .populate({
         path: "postedBy",
         model: "User",
         select: "_id name profileImage role"
       })
       .exec();
-    res.status(200).json(acceptedPosts);
+
+    const hasMore = posts.length > limit;
+    if (hasMore) posts.pop();
+
+    res.status(200).json({
+      posts,
+      nextCursor: hasMore ? posts[posts.length - 1]._id : null,
+    });
   } catch (error) {
     console.error("Error retrieving accepted blog posts:", error);
     res.status(500).json({ error: "An error occurred" });
