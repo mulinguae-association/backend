@@ -20,7 +20,7 @@ const upload = Multer({ storage });
 router.post("/register", register);
 router.post("/login", login);
 router.post("/logout", logout);
-router.get("/profile", getProfile);
+router.get("/profile", authenticateUser, getProfile);
 // forgot password
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:id/:token", ResetPassword);

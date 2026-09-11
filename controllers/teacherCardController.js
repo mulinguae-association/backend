@@ -4,7 +4,7 @@ import { __dirname } from "../utils/dirname.js";
 import { cloudinary, handleUpload } from "../utils/cloundinaryConfig.js";
 export const createTeacherCard = async (req, res) => {
   try {
-    if (req.role !== "admin") {
+    if (!["admin", "superadmin"].includes(req.user.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     const {
@@ -63,7 +63,7 @@ export const updateTeacherCard = async (req, res) => {
     const teacherId = req.params.id;
     const { firstName, lastName, email, jobBrief, telephone, aboutTeacher } =
       req.body;
-    if (req.role !== "admin") {
+    if (!["admin", "superadmin"].includes(req.user.role)) {
       return res.status(403).json({ error: "No permission." });
     }
 
@@ -87,13 +87,11 @@ export const updateTeacherCard = async (req, res) => {
           async (error) => {
             if (error) {
               console.error(error);
-              return res
-                .status(500)
-                .json({
-                  message: "Error deleting previous image from Cloudinary",
-                });
+              return res.status(500).json({
+                message: "Error deleting previous image from Cloudinary",
+              });
             }
-          }
+          },
         );
       }
       const croppedImage = await convertToWebp(req.file.buffer, undefined);
@@ -113,13 +111,11 @@ export const updateTeacherCard = async (req, res) => {
 
     await teacher.save();
 
-    res
-      .status(200)
-      .json({
-        message: "Teacher updated successfully",
-        updatedTeacher: teacher,
-        success: true,
-      });
+    res.status(200).json({
+      message: "Teacher updated successfully",
+      updatedTeacher: teacher,
+      success: true,
+    });
   } catch (error) {
     console.error("Error updating teacher:", error);
     res.status(500).json({ message: "Internal server error", success: false });
@@ -146,7 +142,7 @@ export const getTeachersCard = async (req, res) => {
 
 export const deleteTeacherCard = async (req, res) => {
   try {
-    if (req.role !== "admin") {
+    if (!["admin", "superadmin"].includes(req.user.role)) {
       return res.status(403).json({ error: "No permission." });
     }
     const teacherId = req.params.id;
@@ -164,13 +160,11 @@ export const deleteTeacherCard = async (req, res) => {
         async (error) => {
           if (error) {
             console.error(error);
-            return res
-              .status(500)
-              .json({
-                message: "Error deleting previous image from Cloudinary",
-              });
+            return res.status(500).json({
+              message: "Error deleting previous image from Cloudinary",
+            });
           }
-        }
+        },
       );
     }
 
