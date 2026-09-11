@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import User from "../db/models/User.js";
 
 const authenticateUser = async (req, res, next) => {
-  const token = req.cookies.token;
+  const token = req.cookies.token
   if (!token)
     return res
       .status(401)
@@ -15,21 +15,15 @@ const authenticateUser = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Find the authenticated user
-    const user = await User.findById(decoded.userId).select(
-      "_id name email role status profileImage",
-    );
+    const user = await User.findById(decoded.userId);
     if (!user) {
       throw new Error();
     }
-
-    if (user.status === "deactivated") {
-      return res.status(403).json({
-        error:
-          "Your account is deactivated. Please contact support or an administrator.",
-      });
-    }
     // Attach the user's details to the request object
-    req.user = user;
+    req.userId = user._id;
+    req.userName = user.name;
+    req.avatar = user.profileImage
+    req.role = decoded.role || "user";
     // Continue to the next middleware or route handler
     next();
   } catch (err) {

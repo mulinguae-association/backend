@@ -2,35 +2,15 @@ import mongoose from "mongoose";
 import bcrypt from "bcrypt";
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, max: 64 },
-  email: {
-    type: String,
-    required: true,
-    trim: true,
-    unique: true,
-    lowercase: true,
-  },
+  email: { type: String, required: true, trim: true, unique: true, lowercase: true },
   password: { type: String, required: true },
   profileImage: {
     type: String,
-    default:
-      "https://res.cloudinary.com/dfnwjr7vo/image/upload/f_auto/v1707067820/default-avatar_ux2cdp.png",
-    required: false,
+    default: "https://res.cloudinary.com/dfnwjr7vo/image/upload/f_auto/v1707067820/default-avatar_ux2cdp.png",
+    required: false
   },
   terms: { type: Boolean, default: false },
-  role: {
-    type: String,
-    enum: ["superadmin", "admin", "user"],
-    default: "user",
-  },
-  status: {
-    type: String,
-    enum: ["active", "deactivated"],
-    default: "active",
-  },
-  deactivatedAt: {
-    type: Date,
-    default: null,
-  },
+  role: { type: String, enum: ["admin", "user"], default: "user" },
 });
 // Hash the password before saving
 userSchema.pre("save", async function (next) {

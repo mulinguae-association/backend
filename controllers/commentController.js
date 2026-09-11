@@ -4,16 +4,11 @@ import BlogPost from "../db/models/BlogPost.js";
 import Comment from "../db/models/Comment.js";
 import User from "../db/models/User.js";
 
-const userPouplate = {
-  path: "postedBy",
-  select: "_id name profileImage role",
-};
-
 // Define your functions
 async function createComment(req, res) {
   try {
     const { content } = req.body;
-    const authorId = req.user._id;
+    const authorId = req.userId;
     const id = req.params.id; // blog id comes from route param
     // find author info
     const author = await User.findById(authorId);
@@ -30,9 +25,7 @@ async function createComment(req, res) {
       blogId: id,
       postedBy: author,
       parentComment: null,
-      status: ["admin", "superadmin"].includes(req.user.role)
-        ? "accepted"
-        : "pending",
+      status: req.role === "admin" ? "accepted" : "pending",
     });
 
     await comment.save();
@@ -56,14 +49,12 @@ async function updatedComment(req, res) {
       return res.status(404).json({ error: "Comment not found" });
     }
     if (
-      comment.postedBy._id.toString() === req.user._id.toString() ||
-      ["admin", "superadmin"].includes(req.user.role)
+      comment.postedBy._id.toString() === req.userId.toString() ||
+      req.role === "admin"
     ) {
       // Update the comment content
       comment.content = content;
-      comment.status = ["admin", "superadmin"].includes(req.user.role)
-        ? "accepted"
-        : "pending";
+      comment.status = req.role === "admin" ? "accepted" : "pending";
 
       // Save the updated comment
       await comment.save();
@@ -78,7 +69,7 @@ async function updatedComment(req, res) {
 // Create a reply comment and push it into the parent comment's replies array
 async function createReplyComment(req, res) {
   const { content, blogId, parentCommentId } = req.body;
-  const authorId = req.user._id;
+  const authorId = req.userId;
   try {
     const parentComment = await Comment.findById(parentCommentId);
     // find author info
@@ -92,9 +83,7 @@ async function createReplyComment(req, res) {
       blogId,
       postedBy: author,
       parentComment: parentCommentId,
-      status: ["admin", "superadmin"].includes(req.user.role)
-        ? "accepted"
-        : "pending",
+      status: req.role === "admin" ? "accepted" : "pending",
     });
 
     await replyComment.save();
@@ -121,20 +110,13 @@ async function createReplyComment(req, res) {
 
 async function getPendingComments(req, res) {
   try {
-    if (!["admin", "superadmin"].includes(req.user.role)) {
+    if (req.role !== "admin") {
       return res.status(403).json({ error: "No permission." });
     }
-    const pendingComments = await Comment.find({ status: "pending" }).populate([
-      {
-        path: "replies",
-        model: "Comment",
-      },
-      {
-        path: "postedBy",
-        model: "User",
-        select: "_id name profileImage role",
-      },
-    ]);
+    const pendingComments = await Comment.find({ status: "pending" }).populate({
+      path: "replies",
+      model: "Comment",
+    });
     res.status(200).json(pendingComments);
   } catch (error) {
     console.error("Error retrieving blog posts:", error);
@@ -156,7 +138,11 @@ async function getAcceptedComments(req, res) {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
-      .populate(userPouplate);
+      .populate({
+        path: "postedBy",
+        model: "User",
+        select: "_id name profileImage role",
+      });
 
     const totalComments = await Comment.aggregate([
       {
@@ -203,7 +189,11 @@ async function getRemainingAcceptedReplies(req, res) {
     })
       .skip(skip)
       .limit(parseInt(limit))
-      .populate(userPouplate);
+      .populate({
+        path: "postedBy",
+        model: "User",
+        select: "_id name profileImage role",
+      });
 
     // Get the last (most recent) accepted reply
     const lastAcceptedReply = await Comment.findOne({
@@ -211,7 +201,11 @@ async function getRemainingAcceptedReplies(req, res) {
       status: "accepted",
     })
       .sort({ _id: -1 })
-      .populate(userPouplate);
+      .populate({
+        path: "postedBy",
+        model: "User",
+        select: "_id name profileImage role",
+      });
 
     // Also return total accepted replies count for the parent comment
     const totalAcceptedReplies = await Comment.countDocuments({
@@ -247,7 +241,7 @@ async function acceptComment(req, res) {
 
 async function deleteComment(req, res) {
   const { commentId } = req.params;
-  const authorId = req.user._id;
+  const authorId = req.userId;
 
   try {
     const comment = await Comment.findById(commentId);
@@ -259,7 +253,7 @@ async function deleteComment(req, res) {
 
     if (
       comment.postedBy._id.toString() === authorId.toString() ||
-      ["admin", "superadmin"].includes(req.user.role)
+      req.role === "admin"
     ) {
       if (isParentComment) {
         // Delete all replies of this parent comment

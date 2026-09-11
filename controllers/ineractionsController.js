@@ -4,7 +4,7 @@ import Comment from "../db/models/Comment.js";
 async function updateInteraction(req, res) {
   try {
     const { modelType, id, action } = req.params;
-    const userId = req.user._id;
+    const userId = req.userId;
     let model;
 
     if (modelType === "comment") {
@@ -23,24 +23,24 @@ async function updateInteraction(req, res) {
 
     // Create an array to hold the current interaction
     let interactionArray = [];
-    let interactionType = "";
+    let interactionType = '';
 
     // Determine the interaction array and type based on the action
-    if (action === "like") {
-      interactionArray = ["likes"];
-      interactionType = "likes";
-    } else if (action === "unlike") {
-      interactionArray = ["unlikes"];
-      interactionType = "unlikes";
-    } else if (action === "love") {
-      interactionArray = ["loves"];
-      interactionType = "loves";
+    if (action === 'like') {
+      interactionArray = ['likes'];
+      interactionType = 'likes';
+    } else if (action === 'unlike') {
+      interactionArray = ['unlikes'];
+      interactionType = 'unlikes';
+    } else if (action === 'love') {
+      interactionArray = ['loves'];
+      interactionType = 'loves';
     } else {
-      return res.status(400).json({ error: "Invalid action" });
+      return res.status(400).json({ error: 'Invalid action' });
     }
 
     // Remove all other interaction types for this user
-    ["likes", "loves", "unlikes"].forEach((type) => {
+    ['likes', 'loves', 'unlikes'].forEach((type) => {
       if (type !== interactionType) {
         const index = doc[type].indexOf(userId);
         if (index !== -1) {
@@ -68,7 +68,7 @@ async function updateInteraction(req, res) {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "An error occurred" });
+    res.status(500).json({ error: 'An error occurred' });
   }
 }
-export default updateInteraction;
+export default updateInteraction
