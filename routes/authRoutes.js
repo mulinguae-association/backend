@@ -5,6 +5,7 @@ import {
   login,
   logout,
   register,
+  refresh,
   forgotPassword,
   ResetPassword,
 } from "../controllers/authController.js";
@@ -19,6 +20,7 @@ const upload = Multer({ storage });
 
 router.post("/register", register);
 router.post("/login", login);
+router.post("/refresh", refresh);
 router.post("/logout", logout);
 router.get("/profile", getProfile);
 // forgot password

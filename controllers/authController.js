@@ -9,6 +9,23 @@ import { sendEmail } from "../utils/emailSender.js";
 import { validateHuman } from "../utils/validateHuman.js";
 import validator from "validator";
 import { handleUpload, cloudinary } from "../utils/cloundinaryConfig.js";
+import {
+  ACCESS_COOKIE,
+  REFRESH_COOKIE,
+  generateAccessToken,
+  generateRefreshToken,
+  verifyToken,
+  setAuthCookies,
+  clearAuthCookies,
+} from "../services/tokenService.js";
+
+const toUserData = (user) => ({
+  userId: user._id,
+  role: user.role,
+  name: user.name,
+  email: user.email,
+  profileImage: user.profileImage,
+});
 async function register(req, res) {
   try {
     const { name, email, password, confirmPassword, terms, token } = req.body;
@@ -73,34 +90,40 @@ async function login(req, res) {
       return res.json({ error: "Invalid Credentials" });
     }
 
-    const userData = {
-      userId: user._id,
-      role: user.role,
-      name: user.name,
-      email: user.email,
-      profileImage: user.profileImage,
-    };
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+    setAuthCookies(res, { accessToken, refreshToken });
 
-    jwt.sign(
-      userData,
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "3d",
-      },
-      (err, token) => {
-        if (err) throw err;
-        res
-          .cookie("token", token, {
-            httpOnly: true,
-            sameSite: process.env.NODE_ENV === "production" ? "Lax" : "Strict",
-            secure: process.env.NODE_ENV === "production",
-            path: "/",
-          })
-          .json(userData);
-      },
-    );
+    return res.json(toUserData(user));
   } catch (error) {
     return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+async function refresh(req, res) {
+  const refreshToken = req.cookies?.[REFRESH_COOKIE];
+  if (!refreshToken) {
+    return res.status(401).json({ error: "No refresh token" });
+  }
+
+  try {
+    const decoded = verifyToken(refreshToken);
+    const user = await User.findById(decoded.userId);
+    if (!user || (user.tokenVersion || 0) !== decoded.tokenVersion) {
+      clearAuthCookies(res);
+      return res.status(401).json({ error: "Invalid refresh token" });
+    }
+
+    const accessToken = generateAccessToken(user);
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    const newRefreshToken = generateRefreshToken(user);
+    await user.save();
+
+    setAuthCookies(res, { accessToken, refreshToken: newRefreshToken });
+    return res.json({ userData: toUserData(user) });
+  } catch (err) {
+    clearAuthCookies(res);
+    return res.status(401).json({ error: "Refresh token expired or invalid" });
   }
 }
 const getProfile = (req, res) => {
@@ -122,15 +145,24 @@ const getProfile = (req, res) => {
   );
 };
 
-const logout = (req, res) => {
-  res.clearCookie("token", {
-    httpOnly: true,
-    sameSite: process.env.NODE_ENV === "production" ? "Lax" : "Strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-  });
-  res.status(200).json("Logout success");
-};
+async function logout(req, res) {
+  try {
+    const refreshToken = req.cookies?.[REFRESH_COOKIE];
+    if (refreshToken) {
+      const decoded = verifyToken(refreshToken);
+      if (decoded?.userId) {
+        await User.findByIdAndUpdate(decoded.userId, {
+          $inc: { tokenVersion: 1 },
+        });
+      }
+    }
+  } catch {
+    // Ignore invalid/expired refresh tokens; they are revoked by rotation anyway.
+  }
+
+  clearAuthCookies(res);
+  return res.status(200).json("Logout success");
+}
 
 async function forgotPassword(req, res) {
   const { email, lang } = req.body;
@@ -222,22 +254,6 @@ async function ResetPassword(req, res) {
   }
 }
 
-function generateToken(user) {
-  const token = jwt.sign(
-    {
-      userId: user._id,
-      role: user.role,
-      name: user.name,
-      email: user.email,
-      profileImage: user.profileImage,
-    },
-    process.env.JWT_SECRET,
-    {
-      expiresIn: "3d", // Set the token expiration time
-    },
-  );
-  return token;
-}
 async function updateProfile(req, res) {
   const { name, email } = req.body;
 
@@ -289,12 +305,10 @@ async function updateProfile(req, res) {
     user.email = email;
 
     await user.save();
-    const updatedToken = generateToken(user);
-    res.cookie("token", updatedToken, {
-      httpOnly: true,
-      sameSite: process.env.NODE_ENV === "production" ? "Lax" : "Strict",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    setAuthCookies(res, {
+      accessToken: generateAccessToken(user),
+      refreshToken: generateRefreshToken(user),
     });
     return res.status(200).json({
       data: {
@@ -313,6 +327,7 @@ async function updateProfile(req, res) {
 export {
   register,
   login,
+  refresh,
   getProfile,
   updateProfile,
   logout,
