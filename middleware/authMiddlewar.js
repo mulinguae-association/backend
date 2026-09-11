@@ -20,6 +20,7 @@ const authenticateUser = async (req, res, next) => {
       throw new Error();
     }
     // Attach the user's details to the request object
+    req.user = user;
     req.userId = user._id;
     req.userName = user.name;
     req.avatar = user.profileImage
