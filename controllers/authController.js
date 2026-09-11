@@ -61,7 +61,9 @@ async function register(req, res) {
         return res.status(400).json({ error: "passwords don't match" });
       }
       // Check if email already exists
-      const existingUser = await User.findOne({ email });
+      const existingUser = await User.findOne({
+        email: String(email || "").trim().toLowerCase(),
+      });
       if (existingUser) {
         return res.status(400).json({ error: "email already exists." });
       }
@@ -81,13 +83,15 @@ async function register(req, res) {
 async function login(req, res) {
   const { email, password } = req.body;
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({
+      email: String(email || "").trim().toLowerCase(),
+    });
     if (!user) {
-      return res.json({ error: "Invalid Credentials" });
+      return res.status(401).json({ error: "Invalid Credentials" });
     }
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      return res.json({ error: "Invalid Credentials" });
+      return res.status(401).json({ error: "Invalid Credentials" });
     }
 
     const accessToken = generateAccessToken(user);
@@ -272,7 +276,9 @@ async function updateProfile(req, res) {
     }
     // Check if the email already exists in the database
     if (email !== user.email) {
-      const existingUser = await User.findOne({ email });
+      const existingUser = await User.findOne({
+        email: String(email || "").trim().toLowerCase(),
+      });
 
       if (existingUser) {
         return res.status(400).json({ error: "Email already exists" });
