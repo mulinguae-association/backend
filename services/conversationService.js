@@ -10,6 +10,7 @@
  */
 
 import Conversation from "../db/models/Conversation.js";
+import mongoose from "mongoose";
 
 /**
  * Save a message to a conversation.
@@ -76,16 +77,17 @@ export const getConversation = async (conversationId, userId) => {
 /**
  * Get conversation messages formatted for Groq.
  * Only returns messages if the conversation belongs to the given user.
+ * Keeps the request small: last ~10 messages, each capped at 2000 chars.
  *
  * @param {string} conversationId - Unique conversation ID
  * @param {string} [userId] - Owning user ID (optional ownership check)
- * @param {number} [maxMessages=50] - Max messages to return
+ * @param {number} [maxMessages=10] - Max messages to return
  * @returns {Promise<Array>} Array of messages in Groq format
  */
 export const getGroqHistory = async (
   conversationId,
   userId,
-  maxMessages = 50,
+  maxMessages = 10,
 ) => {
   const query = { conversationId };
   if (userId) query.userId = userId;
@@ -98,7 +100,10 @@ export const getGroqHistory = async (
 
   return conversation.messages.slice(-maxMessages).map((msg) => ({
     role: msg.role,
-    content: msg.content,
+    content:
+      msg.content.length > 2000
+        ? `${msg.content.slice(0, 2000)}…`
+        : msg.content,
   }));
 };
 
@@ -134,7 +139,7 @@ export const deleteConversation = async (conversationId) => {
 /**
  * Get all conversations for a user.
  *
- * @param {string} userId - User ID
+ * @param {string|object} userId - User ID
  * @param {object} [options] - Query options
  * @param {number} [options.limit=20] - Max results
  * @param {number} [options.skip=0] - Skip count
@@ -144,12 +149,30 @@ export const getUserConversations = async (
   userId,
   { limit = 20, skip = 0 } = {},
 ) => {
-  return Conversation.find({ userId })
-    .sort({ updatedAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .select("conversationId domain updatedAt messages")
-    .lean();
+  const userObjectId =
+    typeof userId === "string" ? new mongoose.Types.ObjectId(userId) : userId;
+
+  return Conversation.aggregate([
+    { $match: { userId: userObjectId } },
+    { $sort: { updatedAt: -1 } },
+    { $skip: skip },
+    { $limit: limit },
+    {
+      $project: {
+        conversationId: 1,
+        domain: 1,
+        updatedAt: 1,
+        lastMessage: { $arrayElemAt: ["$messages", -1] },
+        messageCount: {
+          $cond: {
+            if: { $isArray: "$messages" },
+            then: { $size: "$messages" },
+            else: 0,
+          },
+        },
+      },
+    },
+  ]);
 };
 
 export default {
