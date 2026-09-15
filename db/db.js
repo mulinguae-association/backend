@@ -1,7 +1,5 @@
 import mongoose from "mongoose";
 
-const mongoUrl = process.env.MONGO_URI;
-
 // Use a global variable to store the connection state across function calls
 let cached = global.mongoose;
 
@@ -15,7 +13,14 @@ async function connectToDatabase() {
     return cached.conn;
   }
 
-  // 2. If we are in the middle of connecting, return that promise
+  // 2. Read MONGO_URI at call time (not module level) so dotenv.config()
+  //    has a chance to run first — ES module imports are hoisted.
+  const mongoUrl = process.env.MONGO_URI;
+  if (!mongoUrl) {
+    throw new Error("MONGO_URI is not defined in environment variables");
+  }
+
+  // 3. If we are in the middle of connecting, return that promise
   if (!cached.promise) {
     const opts = {
       bufferCommands: false, // CRITICAL: Stop the 10000ms buffering error

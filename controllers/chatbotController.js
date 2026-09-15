@@ -1,7 +1,7 @@
 /**
  * Chatbot Controller
- * Handles all chatbot-related API endpoints including
- * message processing, conversation management, and streaming responses.
+ * Handles chatbot endpoints: streaming chat, sync chat, rate-limit info,
+ * and conversation management.
  */
 
 import {
@@ -9,112 +9,128 @@ import {
   buildGroqMessages,
 } from "../services/groqService.js";
 import {
+  getCachedResponse,
+  cacheResponse,
+} from "../services/chatCacheService.js";
+import {
   getGroqHistory,
   saveMessage,
   getConversation,
   getUserConversations,
 } from "../services/conversationService.js";
+import { getClientIP } from "../utils/request.js";
 import { v4 as uuidv4 } from "uuid";
 
-/**
- * Get the client IP address from the request.
- * Works with various proxy configurations.
- */
-const getClientIP = (req) => {
-  return (
-    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
-    req.headers["x-real-ip"] ||
-    req.socket?.remoteAddress ||
-    "unknown"
+const writeEvent = (res, payload) => {
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+};
+
+const newConversationId = (req) => `${getClientIP(req)}-${uuidv4()}`;
+
+const parseMessage = (req) => {
+  const { message, conversationId, domain = "general" } = req.body;
+  if (!message || typeof message !== "string") {
+    return { error: "Message is required." };
+  }
+  const trimmedMessage = message.trim();
+  if (!trimmedMessage) return { error: "Message cannot be empty." };
+  if (trimmedMessage.length > 4000) {
+    return { error: "Message exceeds maximum length." };
+  }
+  return { trimmedMessage, conversationId, domain };
+};
+
+const loadHistory = async (conversationId, userId) => {
+  if (!conversationId || !userId) return [];
+  return getGroqHistory(conversationId, userId);
+};
+
+const persist = async (conversationId, role, content, { userId, domain }) =>
+  saveMessage(
+    conversationId,
+    { role, content, timestamp: Date.now() },
+    { userId, domain },
   );
+
+const persistPair = async (conversationId, userMessage, botMessage, opts) => {
+  await persist(conversationId, "user", userMessage, opts);
+  if (botMessage) await persist(conversationId, "assistant", botMessage, opts);
+};
+
+const buildMessages = async (domain, conversationId, userId, message) => {
+  const history = await loadHistory(conversationId, userId);
+  const messages = await buildGroqMessages(domain, history, message);
+  messages.push({ role: "user", content: message });
+  return messages;
 };
 
 /**
  * POST /api/chatbot/chat
  * Send a message and receive a streamed response from Groq.
- *
- * Body: { message: string, conversationId?: string, domain?: string }
+ * Fresh conversations (no conversationId) hit the response cache first;
+ * cached answers bypass the LLM entirely.
  */
 export const handleChatMessage = async (req, res) => {
   try {
-    const { message, conversationId, domain = "general" } = req.body;
+    const parsed = parseMessage(req);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const { trimmedMessage, conversationId, domain } = parsed;
+
     const userId = req.user ? req.user._id : null;
-    const clientIP = getClientIP(req);
-
-    // Validate input
-    if (!message || typeof message !== "string") {
-      return res.status(400).json({ error: "Message is required." });
-    }
-
-    const trimmedMessage = message.trim();
-    if (trimmedMessage.length === 0) {
-      return res.status(400).json({ error: "Message cannot be empty." });
-    }
-    if (trimmedMessage.length > 4000) {
-      return res.status(400).json({ error: "Message exceeds maximum length." });
-    }
-
     const isAuthed = Boolean(userId);
+    const opts = { userId, domain };
+    const isFresh = !conversationId;
+    const activeConversationId = conversationId || newConversationId(req);
 
-    // Generate a conversation ID if not provided
-    const activeConversationId = conversationId || `${clientIP}-${uuidv4()}`;
-
-    // Conversation history is only loaded/persisted for authenticated users.
-    let conversationHistory = [];
-    if (isAuthed && conversationId) {
-      conversationHistory = await getGroqHistory(activeConversationId, userId);
-    }
-
-    // Build messages for Groq
-    const messages = buildGroqMessages(domain, conversationHistory);
-
-    // Add current user message
-    messages.push({
-      role: "user",
-      content: trimmedMessage,
-    });
-
-    // For streaming responses, we set appropriate headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+    res.setHeader("X-Accel-Buffering", "no");
+    if (isAuthed) writeEvent(res, { conversationId: activeConversationId });
 
-    // Send to Groq with streaming
-    const groqResponse = await getGroqCompletion({
-      messages,
-      stream: true,
-    });
-
-    let fullContent = "";
-
-    // Notify client of the active conversation ID (only persisted for authed users)
-    if (isAuthed) {
-      res.write(
-        `data: ${JSON.stringify({ conversationId: activeConversationId })}\n\n`,
-      );
+    // Cache only applies to single-turn (fresh) conversations.
+    const cached = isFresh
+      ? await getCachedResponse(trimmedMessage, domain)
+      : null;
+    if (cached) {
+      writeEvent(res, { content: cached });
+      res.write("data: [DONE]\n\n");
+      if (isAuthed) {
+        await persistPair(activeConversationId, trimmedMessage, cached, opts);
+      }
+      return res.end();
     }
 
-    // Process the streaming response
+    const messages = await buildMessages(
+      domain,
+      conversationId,
+      userId,
+      trimmedMessage,
+    );
+    const groqResponse = await getGroqCompletion({ messages, stream: true });
+
+    let fullContent = "";
+    let buffer = "";
     groqResponse.on("data", (chunk) => {
-      const lines = chunk.toString().split("\n");
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
       for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6);
-          if (data === "[DONE]") {
-            res.write("data: [DONE]\n\n");
-            continue;
+        const data = line.trim();
+        if (!data.startsWith("data: ")) continue;
+        const payload = data.slice(6);
+        if (payload === "[DONE]") {
+          res.write("data: [DONE]\n\n");
+          continue;
+        }
+        try {
+          const content = JSON.parse(payload).choices?.[0]?.delta?.content;
+          if (content) {
+            fullContent += content;
+            writeEvent(res, { content });
           }
-          try {
-            const parsed = JSON.parse(data);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              fullContent += content;
-              res.write(`data: ${JSON.stringify({ content })}\n\n`);
-            }
-          } catch (e) {
-            // Skip malformed JSON
-          }
+        } catch {
+          // skip malformed frames
         }
       }
     });
@@ -122,100 +138,88 @@ export const handleChatMessage = async (req, res) => {
     groqResponse.on("end", async () => {
       try {
         if (isAuthed) {
-          await saveMessage(
+          await persistPair(
             activeConversationId,
-            { role: "user", content: trimmedMessage, timestamp: Date.now() },
-            { userId, domain },
+            trimmedMessage,
+            fullContent,
+            opts,
           );
-          if (fullContent) {
-            await saveMessage(
-              activeConversationId,
-              {
-                role: "assistant",
-                content: fullContent,
-                timestamp: Date.now(),
-              },
-              { userId, domain },
-            );
-          }
+        }
+        if (isFresh && fullContent) {
+          await cacheResponse(trimmedMessage, domain, fullContent);
         }
       } catch (err) {
-        console.error("Failed to save conversation:", err);
+        console.error("[chatbot] save failed:", err);
       }
       res.end();
     });
 
     groqResponse.on("error", (err) => {
-      console.error("Groq streaming error:", err);
-      res.status(500).json({ error: "Failed to get response from AI." });
+      console.error("[chatbot] stream error:", err);
+      if (!res.headersSent) {
+        return res
+          .status(500)
+          .json({ error: "Failed to get response from AI." });
+      }
+      writeEvent(res, { error: "Failed to get response from AI." });
+      res.end();
     });
 
-    // Handle client disconnect
-    req.on("close", () => {
-      groqResponse.destroy();
-    });
+    req.on("close", () => groqResponse.destroy());
   } catch (error) {
-    console.error("Chat error:", error);
-    res.status(500).json({
-      error: "Internal server error",
-      message: error.message,
-    });
+    console.error("[chatbot] chat error:", error);
+    res
+      .status(500)
+      .json({ error: "Internal server error", message: error.message });
   }
 };
 
 /**
  * POST /api/chatbot/chat/sync
  * Send a message and receive a complete (non-streaming) response.
- * Useful for simpler integrations.
- *
- * Body: { message: string, domain?: string }
+ * Uses the cache for fresh conversations.
  */
 export const handleChatMessageSync = async (req, res) => {
   try {
-    const { message, conversationId, domain = "general" } = req.body;
+    const parsed = parseMessage(req);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const { trimmedMessage, conversationId, domain } = parsed;
+
     const userId = req.user ? req.user._id : null;
     const isAuthed = Boolean(userId);
+    const opts = { userId, domain };
+    const isFresh = !conversationId;
+    const activeConversationId = conversationId || newConversationId(req);
 
-    if (
-      !message ||
-      typeof message !== "string" ||
-      message.trim().length === 0
-    ) {
-      return res.status(400).json({ error: "Message is required." });
+    const cached = isFresh
+      ? await getCachedResponse(trimmedMessage, domain)
+      : null;
+    if (cached) {
+      if (isAuthed) {
+        await persistPair(activeConversationId, trimmedMessage, cached, opts);
+      }
+      return res.json({
+        conversationId: isAuthed ? activeConversationId : null,
+        content: cached,
+        timestamp: Date.now(),
+        cached: true,
+      });
     }
 
-    const trimmedMessage = message.trim();
-    const clientIP = getClientIP(req);
-    const activeConversationId = conversationId || `${clientIP}-${uuidv4()}`;
-
-    let conversationHistory = [];
-    if (isAuthed && conversationId) {
-      conversationHistory = await getGroqHistory(activeConversationId, userId);
-    }
-    const messages = buildGroqMessages(domain, conversationHistory);
-    messages.push({ role: "user", content: trimmedMessage });
-
-    const groqResponse = await getGroqCompletion({
-      messages,
-      stream: false,
-    });
-
+    const messages = await buildMessages(
+      domain,
+      conversationId,
+      userId,
+      trimmedMessage,
+    );
+    const groqResponse = await getGroqCompletion({ messages, stream: false });
     const content = groqResponse.choices?.[0]?.message?.content || "";
 
-    // Only persist conversations for authenticated users.
+    if (isFresh && content) {
+      await cacheResponse(trimmedMessage, domain, content);
+    }
     if (isAuthed) {
-      await saveMessage(
-        activeConversationId,
-        { role: "user", content: trimmedMessage, timestamp: Date.now() },
-        { userId, domain },
-      );
-      if (content) {
-        await saveMessage(
-          activeConversationId,
-          { role: "assistant", content, timestamp: Date.now() },
-          { userId, domain },
-        );
-      }
+      await persistPair(activeConversationId, trimmedMessage, content, opts);
     }
 
     res.json({
@@ -224,11 +228,10 @@ export const handleChatMessageSync = async (req, res) => {
       timestamp: Date.now(),
     });
   } catch (error) {
-    console.error("Chat sync error:", error);
-    res.status(500).json({
-      error: "Internal server error",
-      message: error.message,
-    });
+    console.error("[chatbot] sync error:", error.message);
+    res
+      .status(500)
+      .json({ error: "Internal server error", message: error.message });
   }
 };
 
@@ -238,14 +241,7 @@ export const handleChatMessageSync = async (req, res) => {
  */
 export const checkRateLimit = async (req, res) => {
   try {
-    const clientIP = getClientIP(req);
-    // Rate limit data is set by the rateLimitMiddleware
-    const rateLimitData = req.rateLimit || {};
-
-    res.json({
-      ip: clientIP,
-      ...rateLimitData,
-    });
+    res.json({ ip: getClientIP(req), ...(req.rateLimit || {}) });
   } catch (error) {
     res.status(500).json({ error: "Failed to check rate limit." });
   }
@@ -253,49 +249,40 @@ export const checkRateLimit = async (req, res) => {
 
 /**
  * GET /api/chatbot/conversations
- * List all conversations for the authenticated user.
- * Returns conversation blocks (id, domain, last message, timestamp).
- * Requires authentication.
+ * List all conversations for the authenticated user (lightweight blocks).
  */
 export const listConversations = async (req, res) => {
   try {
-    const userId = req.user._id;
-
-    const conversations = await getUserConversations(userId, {
+    const conversations = await getUserConversations(req.user._id, {
       limit: parseInt(req.query.limit) || 20,
       skip: parseInt(req.query.skip) || 0,
     });
 
-    // Format for the frontend: return lightweight blocks with the last message
-    const blocks = conversations.map((conv) => ({
-      conversationId: conv.conversationId,
-      domain: conv.domain,
-      lastMessage:
-        conv.messages.length > 0
-          ? conv.messages[conv.messages.length - 1].content
-          : "",
-      messageCount: conv.messages.length,
-      updatedAt: conv.updatedAt,
-    }));
-
-    res.json({ conversations: blocks });
+    res.json({
+      conversations: conversations.map((conv) => ({
+        conversationId: conv.conversationId,
+        domain: conv.domain,
+        lastMessage: conv.lastMessage?.content || "",
+        messageCount: conv.messageCount || 0,
+        updatedAt: conv.updatedAt,
+      })),
+    });
   } catch (error) {
-    console.error("List conversations error:", error);
+    console.error("[chatbot] list conversations error:", error);
     res.status(500).json({ error: "Failed to fetch conversations." });
   }
 };
 
 /**
  * GET /api/chatbot/conversations/:conversationId
- * Get full message history for a specific conversation.
- * Requires authentication and ownership.
+ * Get full message history for a specific conversation (ownership-checked).
  */
 export const getConversationHistory = async (req, res) => {
   try {
-    const { conversationId } = req.params;
-    const userId = req.user._id;
-
-    const conversation = await getConversation(conversationId, userId);
+    const conversation = await getConversation(
+      req.params.conversationId,
+      req.user._id,
+    );
     if (!conversation) {
       return res.status(404).json({ error: "Conversation not found." });
     }
@@ -307,7 +294,7 @@ export const getConversationHistory = async (req, res) => {
       updatedAt: conversation.updatedAt,
     });
   } catch (error) {
-    console.error("Get conversation history error:", error);
+    console.error("[chatbot] get conversation error:", error);
     res.status(500).json({ error: "Failed to fetch conversation." });
   }
 };

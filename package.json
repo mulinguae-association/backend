@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "reindex-knowledge": "node scripts/reindexKnowledge.js",
+    "crawl-website": "node scripts/crawlWebsite.js",
+    "postinstall": "node -e \"try{require('fs').rmSync('node_modules/@huggingface/transformers/node_modules/sharp',{recursive:true,force:true})}catch(e){}\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "type": "module",
@@ -13,6 +16,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "@upstash/redis": "^1.38.4",
     "axios": "^1.6.7",
     "bcrypt": "^5.1.1",
@@ -27,9 +31,14 @@
     "mongoose": "^7.4.3",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^7.0.12",
-    "sharp": "^0.32.5",
+    "sharp": "^0.32.6",
     "uuid": "^9.0.0",
     "validator": "^13.11.0"
+  },
+  "overrides": {
+    "@huggingface/transformers": {
+      "sharp": "$sharp"
+    }
   },
   "devDependencies": {
     "nodemon": "^3.1.11"

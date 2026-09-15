@@ -4,11 +4,11 @@ import jwt from "jsonwebtoken";
 import User from "../db/models/User.js";
 
 const authenticateUser = async (req, res, next) => {
-  const token = req.cookies.token
+  const token = req.cookies.token;
   if (!token)
     return res
       .status(401)
-      .json({ error: "Please log in or register to interact with blogs" });
+      .json({ error: "Authentication required. Please log in" });
 
   try {
     // Verify the token and decode its payload
@@ -23,7 +23,7 @@ const authenticateUser = async (req, res, next) => {
     req.user = user;
     req.userId = user._id;
     req.userName = user.name;
-    req.avatar = user.profileImage
+    req.avatar = user.profileImage;
     req.role = decoded.role || "user";
     // Continue to the next middleware or route handler
     next();

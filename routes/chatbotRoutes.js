@@ -14,6 +14,28 @@ import {
 import { createChatbotRateLimiter } from "../middleware/rateLimitMiddleware.js";
 import authenticateUser from "../middleware/authMiddlewar.js";
 import optionalAuth from "../middleware/optionalAuthMiddleware.js";
+import {
+  indexKnowledgeBase,
+  getEmbeddingCount,
+} from "../services/knowledgeEmbeddings.js";
+import {
+  invalidateChatCache,
+  invalidateRagCache,
+} from "../services/chatCacheService.js";
+
+/**
+ * Middleware: require authenticated admin user.
+ */
+const requireAdmin = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Authentication required." });
+  }
+  const role = req.user.role || req.role;
+  if (!["admin", "superadmin"].includes(role)) {
+    return res.status(403).json({ error: "Admin access required." });
+  }
+  next();
+};
 
 const router = express.Router();
 
@@ -52,6 +74,48 @@ router.get(
   "/conversations/:conversationId",
   authenticateUser,
   getConversationHistory,
+);
+
+/**
+ * POST /api/chatbot/reindex
+ * Re-index knowledge base embeddings into MongoDB. Admin only.
+ */
+router.post("/reindex", authenticateUser, requireAdmin, async (req, res) => {
+  try {
+    const result = await indexKnowledgeBase();
+    const [cleared, clearedRag] = await Promise.all([
+      invalidateChatCache(),
+      invalidateRagCache(),
+    ]);
+    res.json({
+      message: `Reindexed ${result.indexed} chunks, cleared ${cleared + clearedRag} cached entries.`,
+      indexed: result.indexed,
+      totalChunks: result.chunks,
+      cacheCleared: cleared,
+      ragCacheCleared: clearedRag,
+    });
+  } catch (err) {
+    console.error("Reindex error:", err);
+    res.status(500).json({ error: "Reindex failed: " + err.message });
+  }
+});
+
+/**
+ * GET /api/chatbot/embedding-count
+ * Check how many knowledge embeddings exist. Admin only.
+ */
+router.get(
+  "/embedding-count",
+  authenticateUser,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const count = await getEmbeddingCount();
+      res.json({ count });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to get embedding count." });
+    }
+  },
 );
 
 export default router;
