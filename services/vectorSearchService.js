@@ -43,8 +43,21 @@ export const retrieveContext = async (
   const embedding = await embedText(query);
   if (!embedding) return null;
 
-  const db = mongoose.connection.db;
-  if (!db) return null;
+  // Get database connection properly
+  let db = null;
+  let isConnected = false;
+
+  if (mongoose.connection?.db) {
+    db = mongoose.connection.db;
+    isConnected = mongoose.connection.readyState === 1;
+  } else if (mongoose.connection?.readyState === 1) {
+    db = mongoose.connection.db;
+    isConnected = true;
+  } else {
+    return null;
+  }
+
+  if (!db || !isConnected) return null;
 
   const collection = db.collection(COLLECTION);
 

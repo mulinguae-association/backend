@@ -27,9 +27,9 @@ async function connectToDatabase() {
       serverSelectionTimeoutMS: 5000, // Fail faster so you know there's an issue
     };
 
-    cached.promise = mongoose.connect(mongoUrl, opts).then((mongoose) => {
+    cached.promise = mongoose.connect(mongoUrl, opts).then((conn) => {
       console.log("Connected to MongoDB (New Instance)");
-      return mongoose;
+      return conn;
     });
   }
 
