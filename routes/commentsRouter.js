@@ -7,7 +7,7 @@ import {
   createReplyComment,
   updatedComment,
   getAcceptedComments,
-  getRemainingAcceptedReplies,
+  getCommentReplies,
 } from "../controllers/commentController.js";
 import authenticateUser from "../middleware/authMiddlewar.js";
 import updateInteraction from "../controllers/ineractionsController.js";
@@ -23,13 +23,11 @@ router.patch("/update/:id", authenticateUser, updatedComment);
 router.delete("/:commentId/:blogId", authenticateUser, deleteComment);
 // interaction with comments
 router.post("/:modelType/:id/:action", authenticateUser, updateInteraction);
-router.post("/:modelType/:id/:action", authenticateUser, updateInteraction);
-router.post("/:modelType/:id/:action", authenticateUser, updateInteraction);
 
 //admin
 router.get("/pending", authenticateUser, getPendingComments);
+router.get("/replies/:parentCommentId", getCommentReplies);
 router.get("/:blogId/accepted", getAcceptedComments);
-router.get("/remaining-replies", getRemainingAcceptedReplies);
 router.patch("/accept/:id", authenticateUser, acceptComment);
 router.get("/accept/:id", authenticateUser, acceptComment);
 

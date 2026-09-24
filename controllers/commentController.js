@@ -67,7 +67,7 @@ async function updatedComment(req, res) {
     res.status(500).json({ error: "An error occurred" });
   }
 }
-// Create a reply comment and push it into the parent comment's replies array
+// Create a reply comment referenced by the parent via the flat parentComment field
 async function createReplyComment(req, res) {
   const { content, blogId, parentCommentId } = req.body;
   const authorId = req.userId;
@@ -89,12 +89,6 @@ async function createReplyComment(req, res) {
 
     await replyComment.save();
 
-    // Atomically push reply id into parentComment.replies and increment repliesCount
-    await Comment.findByIdAndUpdate(parentCommentId, {
-      $push: { replies: replyComment._id },
-      $inc: { repliesCount: 1 },
-    });
-
     // Atomically update lastReply on blog post
     await BlogPost.findByIdAndUpdate(blogId, {
       $set: { lastReply: replyComment._id },
@@ -114,10 +108,7 @@ async function getPendingComments(req, res) {
     if (!isAdminRole(req.role)) {
       return res.status(403).json({ error: "No permission." });
     }
-    const pendingComments = await Comment.find({ status: "pending" }).populate({
-      path: "replies",
-      model: "Comment",
-    });
+    const pendingComments = await Comment.find({ status: "pending" });
     res.status(200).json(pendingComments);
   } catch (error) {
     console.error("Error retrieving blog posts:", error);
@@ -126,24 +117,94 @@ async function getPendingComments(req, res) {
 }
 async function getAcceptedComments(req, res) {
   const { blogId } = req.params;
-  const { pageParam = 1, limit = 1 } = req.query;
-  const skip = (pageParam - 1) * limit;
+  const { pageParam = 1, limit = 10 } = req.query;
+  const pageNum = parseInt(pageParam) || 1;
+  const limitNum = parseInt(limit) || 10;
+
+  const populated = {
+    path: "postedBy",
+    model: "User",
+    select: "_id name profileImage role",
+  };
+
+  // Attach the accepted reply count to every comment so parents can show how
+  // many replies they have without loading them.
+  async function attachReplyCounts(comments) {
+    const ids = comments.map((comment) => comment._id).filter(Boolean);
+    const rows = ids.length
+      ? await Comment.aggregate([
+          {
+            $match: {
+              parentComment: { $in: ids },
+              status: "accepted",
+            },
+          },
+          {
+            $group: {
+              _id: "$parentComment",
+              count: { $sum: 1 },
+            },
+          },
+        ])
+      : [];
+    const countMap = new Map(rows.map((row) => [String(row._id), row.count]));
+    comments.forEach((comment) => {
+      comment.repliesCount = countMap.get(String(comment._id)) || 0;
+    });
+    return comments;
+  }
 
   try {
-    // Fetch accepted parent comments with replies
-    const acceptedComments = await Comment.find({
+    // Pin the newest accepted parent comment and its newest reply onto page 1
+    // so the blog feed can always preview them without loading later pages.
+    const newestParent = await Comment.findOne({
       blogId,
-      parentComment: null, // Only parent comments
       status: "accepted",
+      parentComment: null,
     })
       .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .populate({
-        path: "postedBy",
-        model: "User",
-        select: "_id name profileImage role",
-      });
+      .populate(populated)
+      .lean();
+
+    const newestReply = newestParent
+      ? await Comment.findOne({
+          blogId,
+          status: "accepted",
+          parentComment: newestParent._id,
+        })
+          .sort({ createdAt: -1 })
+          .populate(populated)
+          .lean()
+      : null;
+
+    const pinned = [newestParent, newestReply].filter(Boolean);
+    const pinnedIds = pinned.map((comment) => comment._id);
+    // How many of the remaining comments page 1 consumes after the pinned ones
+    const restPerPage = Math.max(0, limitNum - pinned.length);
+    // Remaining comments consumed by the pages before this one
+    const restConsumed =
+      pageNum === 1 ? 0 : restPerPage + (pageNum - 2) * limitNum;
+
+    // Only top-level comments paginate on the blog query; replies are fetched
+    // lazily per parent via the "show replies" button.
+    const rest = await Comment.find(
+      pinnedIds.length > 0
+        ? {
+            blogId,
+            status: "accepted",
+            parentComment: null,
+            _id: { $nin: pinnedIds },
+          }
+        : { blogId, status: "accepted", parentComment: null },
+    )
+      .sort({ createdAt: -1 })
+      .skip(Math.max(0, restConsumed))
+      .limit(pageNum === 1 ? restPerPage : limitNum)
+      .populate(populated)
+      .lean();
+
+    const acceptedComments = pageNum === 1 ? pinned.concat(rest) : rest;
+    await attachReplyCounts(acceptedComments);
 
     const totalComments = await Comment.aggregate([
       {
@@ -173,56 +234,65 @@ async function getAcceptedComments(req, res) {
   }
 }
 
-// Controller to get remaining replies
-async function getRemainingAcceptedReplies(req, res) {
-  const { parentCommentIds } = req.query; // Get from query params, not route params
-  const { pageParam = 1, limit = 3 } = req.query;
-  const skip = (pageParam - 1) * limit;
+// Fetch accepted replies of a parent comment (older than `before` when given),
+// used by the "show more replies" button of a thread.
+async function getCommentReplies(req, res) {
+  const { parentCommentId } = req.params;
+  const { limit = 5, before } = req.query;
   try {
-    // Check if parentCommentIds is provided
-    if (!parentCommentIds) {
-      return res.status(400).json({ message: "Parent comment ID is required" });
+    const filter = {
+      parentComment: parentCommentId,
+      status: "accepted",
+    };
+    if (before) {
+      const beforeDoc = await Comment.findById(before).select("createdAt");
+      if (beforeDoc) filter.createdAt = { $lt: beforeDoc.createdAt };
     }
 
-    const remainingReplies = await Comment.find({
-      parentComment: parentCommentIds,
-      status: "accepted",
-    })
-      .skip(skip)
-      .limit(parseInt(limit))
+    const replies = await Comment.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit) || 5)
       .populate({
         path: "postedBy",
         model: "User",
         select: "_id name profileImage role",
-      });
+      })
+      .lean();
 
-    // Get the last (most recent) accepted reply
-    const lastAcceptedReply = await Comment.findOne({
-      parentComment: parentCommentIds,
-      status: "accepted",
-    })
-      .sort({ _id: -1 })
-      .populate({
-        path: "postedBy",
-        model: "User",
-        select: "_id name profileImage role",
-      });
-
-    // Also return total accepted replies count for the parent comment
-    const totalAcceptedReplies = await Comment.countDocuments({
-      parentComment: parentCommentIds,
-      status: "accepted",
+    // Attach each reply's own reply count so nested threads can show their own
+    // "show replies (N)" button recursively.
+    const ids = replies.map((reply) => reply._id).filter(Boolean);
+    const countRows = ids.length
+      ? await Comment.aggregate([
+          {
+            $match: {
+              parentComment: { $in: ids },
+              status: "accepted",
+            },
+          },
+          {
+            $group: {
+              _id: "$parentComment",
+              count: { $sum: 1 },
+            },
+          },
+        ])
+      : [];
+    const countMap = new Map(
+      countRows.map((row) => [String(row._id), row.count]),
+    );
+    replies.forEach((reply) => {
+      reply.repliesCount = countMap.get(String(reply._id)) || 0;
     });
 
-    res
-      .status(200)
-      .json({ remainingReplies, totalAcceptedReplies, lastAcceptedReply });
-  } catch (err) {
-    console.error("Error fetching replies:", err);
-    res.status(500).json({ message: "Error fetching replies" });
+    res.status(200).json({ replies });
+  } catch (error) {
+    console.error("Error retrieving comment replies:", error);
+    res.status(500).json({ error: "An error occurred" });
   }
 }
 
+// Accept a comment (admin moderation)
 async function acceptComment(req, res) {
   try {
     const { id } = req.params;
@@ -263,12 +333,6 @@ async function deleteComment(req, res) {
         await BlogPost.findByIdAndUpdate(req.params.blogId, {
           $inc: { commentsCount: -1 },
         });
-      } else {
-        // If this is a reply, remove it from parent's replies array and decrement repliesCount
-        await Comment.findByIdAndUpdate(comment.parentComment, {
-          $pull: { replies: comment._id },
-          $inc: { repliesCount: -1 },
-        });
       }
 
       // Delete the comment
@@ -293,6 +357,6 @@ export {
   deleteComment,
   getPendingComments,
   getAcceptedComments,
-  getRemainingAcceptedReplies,
+  getCommentReplies,
   acceptComment,
 };

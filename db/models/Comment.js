@@ -17,13 +17,6 @@ const commentSchema = new mongoose.Schema({
     ref: "Comment",
     default: null, // Default to null for top-level comments
   },
-  replies: [
-    {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Comment",
-    },
-  ],
-  repliesCount: { type: Number, default: 0 },
 });
 
 // Add indexes to speed up lookups and pagination
