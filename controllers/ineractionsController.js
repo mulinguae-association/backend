@@ -15,50 +15,48 @@ async function updateInteraction(req, res) {
       return res.status(400).json({ error: "Invalid model type" });
     }
 
-    const doc = await model.findById(id);
+    const interactionType =
+      action === "like"
+        ? "likes"
+        : action === "unlike"
+          ? "unlikes"
+          : action === "love"
+            ? "loves"
+            : "";
+
+    if (!interactionType) {
+      return res.status(400).json({ error: "Invalid action" });
+    }
+
+    // Toggle atomically with mtomic operators: addToSet/pull are idempotent
+    // and never touch __v, so even concurrent like plus love clicks cannot
+    // throw a Mongoose VersionError.
+    const others = ["likes", "unlikes", "loves"].filter(
+      (type) => type !== interactionType,
+    );
+
+    const already = await model.exists({
+      _id: id,
+      [interactionType]: userId,
+    });
+
+    const doc = await model.findOneAndUpdate(
+      { _id: id },
+      already
+        ? { $pull: { [interactionType]: userId } }
+        : {
+            $addToSet: { [interactionType]: userId },
+            $pull: {
+              [others[0]]: userId,
+              [others[1]]: userId,
+            },
+          },
+      { new: true },
+    );
 
     if (!doc) {
       return res.status(404).json({ error: `${modelType} not found` });
     }
-
-    // Create an array to hold the current interaction
-    let interactionArray = [];
-    let interactionType = '';
-
-    // Determine the interaction array and type based on the action
-    if (action === 'like') {
-      interactionArray = ['likes'];
-      interactionType = 'likes';
-    } else if (action === 'unlike') {
-      interactionArray = ['unlikes'];
-      interactionType = 'unlikes';
-    } else if (action === 'love') {
-      interactionArray = ['loves'];
-      interactionType = 'loves';
-    } else {
-      return res.status(400).json({ error: 'Invalid action' });
-    }
-
-    // Remove all other interaction types for this user
-    ['likes', 'loves', 'unlikes'].forEach((type) => {
-      if (type !== interactionType) {
-        const index = doc[type].indexOf(userId);
-        if (index !== -1) {
-          doc[type].splice(index, 1);
-        }
-      }
-    });
-
-    // Check if the user already performed the interaction
-    const alreadyPerformed = doc[interactionType].includes(userId);
-
-    if (alreadyPerformed) {
-      doc[interactionType].pull(userId);
-    } else {
-      doc[interactionType].push(userId);
-    }
-
-    await doc.save();
 
     res.status(200).json({
       message: `${interactionType} status updated`,
@@ -68,7 +66,7 @@ async function updateInteraction(req, res) {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'An error occurred' });
+    res.status(500).json({ error: "An error occurred" });
   }
 }
-export default updateInteraction
+export default updateInteraction;
