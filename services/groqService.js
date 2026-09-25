@@ -86,16 +86,23 @@ export const getGroqCompletion = async ({
   temperature = 0.7,
   maxTokens = 1024,
   stream = true,
+  // Configurable because moderation must outlast a rate-limit window rather
+  // than fail closed, while the chatbot keeps the default patience.
+  maxRetries = MAX_RETRIES,
+  retryDelayMs = BASE_DELAY_MS,
 }) => {
   console.log(
     `[groqService] Calling Groq — model=${model}, stream=${stream}, messages=${messages.length}`,
   );
-  const response = await withRetry(() =>
-    getGroqClient().post(
-      "/chat/completions",
-      { model, messages, temperature, max_tokens: maxTokens, stream },
-      { responseType: stream ? "stream" : "json" },
-    ),
+  const response = await withRetry(
+    () =>
+      getGroqClient().post(
+        "/chat/completions",
+        { model, messages, temperature, max_tokens: maxTokens, stream },
+        { responseType: stream ? "stream" : "json" },
+      ),
+    maxRetries,
+    retryDelayMs,
   );
   return response.data;
 };

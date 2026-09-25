@@ -26,7 +26,7 @@ There is no step-by-step onboarding guide on the site; learning starts by browsi
 - Teachers (/pages/teachers): "Meet Our Teachers" carousel, each tutor has a "View Profile" link. A teacher profile shows Teaching Philosophy, Career Summary, Teaching Methods and Strategies, Qualifications and Certificates, Teacher Collaboration, Classroom Management, Behavior Management, and Additional Information. There is NO search/filter by language, price, rating, or availability.
 - Courses (/courses): ESL General English (6 levels of 50h each) and English for Specific Purposes (Accounting, Anthropology, Development Studies, Business English, International Studies, Legal English, Trade Union Studies, Travel and Tourism, Women Studies, Agriculture), plus a 100 Basic Phrases module offered across multiple languages. Each listing shows Duration, Target Audience, Description, Goals, Methodology, Areas Covered, Required Level, and Learning Outcomes. A detailed syllabus is provided upon joining a course.
 - Students (/pages/students): mentions "scholarship, special certificates or other form of recognition" strictly as potential rewards for extra-effort students.
-- Blogs (/pages/blogs): community articles. Any logged-in user can submit a post at /pages/blogs/create-new-blog (title, subtitle, rich-text content, preview). All blog posts, comments, and replies require administrator approval before appearing publicly.
+- Blogs (/pages/blogs): community articles. Any logged-in user can submit a post at /pages/blogs/create-new-blog (title, subtitle, rich-text content, preview). Blog posts, comments, and replies are checked by automated content moderation and appear publicly once they pass.
 - Libraries (/pages/libraries): Video Library featuring YouTube videos on endangered languages; an Intro Video modal is also available. There is NO video classroom.
 - 100 Basic Phrases (/pages/100-basic-phrases): 100 Basic Phrases languages are Amari, Arabic, Aymara, Cantonese, French, Hindi, Italian, Kreol Haiti, Kreol Morisyen, Mandarin, Portuguese, Quechua, Russian, Spanish, Urdu. The Courses page states ACS Mulinguae is keen to find teachers for any language you want to learn — mention it in the Contact Box.
 - Education for All (/pages/education-for-all): initiative for accessible language education.
@@ -41,9 +41,9 @@ There is no step-by-step onboarding guide on the site; learning starts by browsi
 
   // User roles
   `## USER ROLES
-- Student: create an account, browse pages, write blog posts (moderated), use 100 Basic Phrases, submit feedback/contact, change language via the LanguageSwitcher.
+- Student: create an account, browse pages, write blog posts, use 100 Basic Phrases, submit feedback/contact, change language via the LanguageSwitcher.
 - Teacher: teachers operate independently; ACS Mulinguae acts strictly as a facilitator and does not employ them. Teachers are added and managed by administrators through an admin-only Dashboard "Add Teacher Information" form (First/Last Name, Email, Job Brief, About, Telephone, profile image). Teachers follow the Teachers Charter and uphold high ethical standards; the majority are bilingual or multilingual, and they engage in continuous professional development including a yearly pedagogy seminar. There is NO user-facing verification-badge process.
-- Admin: full access — user management, teacher information management, content moderation (approves blog posts, comments, replies).`,
+- Admin: full access — user management, teacher information management.`,
 
   // Account & auth
   `## ACCOUNT & AUTH

@@ -1,12 +1,50 @@
 import BlogPost from "../db/models/BlogPost.js";
 import User from "../db/models/User.js";
 import { isAdminRole } from "../utils/isAdminRole.js";
+import {
+  moderateBlogPost,
+  ModerationUnavailableError,
+} from "../services/moderationService.js";
+
+const REJECTED_STATUS = 422;
+const UNAVAILABLE_STATUS = 503;
 
 export async function createBlogPost(req, res) {
   try {
     const { title, subTitle, content } = req.body;
     const authorId = req.userId;
     const author = await User.findById(authorId)
+
+    // Nothing is persisted unless both checks pass; an outage rejects too.
+    try {
+      const verdict = await moderateBlogPost({ title, subTitle, content });
+
+      if (!verdict.allowed) {
+        console.log("[moderation] rejected blog-safety");
+        return res.status(REJECTED_STATUS).json({
+          error: "Your blog could not be published.",
+          code: "CONTENT_REJECTED",
+        });
+      }
+
+      if (!verdict.relevant) {
+        console.log("[moderation] rejected blog-relevance");
+        return res.status(REJECTED_STATUS).json({
+          error:
+            "Your blog could not be published because it does not match the site's content guidelines.",
+          code: "SCOPE_REJECTED",
+        });
+      }
+    } catch (error) {
+      if (error instanceof ModerationUnavailableError) {
+        return res.status(UNAVAILABLE_STATUS).json({
+          error: "Your blog could not be published. Please try again later.",
+          code: "MODERATION_UNAVAILABLE",
+        });
+      }
+      throw error;
+    }
+
     const blogPost = new BlogPost({ title, subTitle, content, postedBy: author, status: "accepted" });
     await blogPost.save();
 

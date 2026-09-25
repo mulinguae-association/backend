@@ -4,6 +4,39 @@ import BlogPost from "../db/models/BlogPost.js";
 import Comment from "../db/models/Comment.js";
 import User from "../db/models/User.js";
 import { isAdminRole } from "../utils/isAdminRole.js";
+import { moderateSafety, ModerationUnavailableError } from "../services/moderationService.js";
+
+// Opaque codes: the client learns only that it was not published, never why.
+const REJECTED_STATUS = 422;
+const UNAVAILABLE_STATUS = 503;
+
+/**
+ * Screen content before it is persisted. Returns true when the content may be
+ * saved. Sends the response and returns false when it may not.
+ */
+async function screenContent(res, { content, type }) {
+  try {
+    const { allowed } = await moderateSafety({ content, type });
+
+    if (allowed) return true;
+
+    console.log(`[moderation] rejected ${type}`);
+    res
+      .status(REJECTED_STATUS)
+      .json({ error: "Your comment could not be published.", code: "CONTENT_REJECTED" });
+    return false;
+  } catch (error) {
+    if (error instanceof ModerationUnavailableError) {
+      // Fail closed: an unavailable moderator must never let content through.
+      res.status(UNAVAILABLE_STATUS).json({
+        error: "Your comment could not be published. Please try again later.",
+        code: "MODERATION_UNAVAILABLE",
+      });
+      return false;
+    }
+    throw error;
+  }
+}
 
 // Define your functions
 async function createComment(req, res) {
@@ -19,6 +52,10 @@ async function createComment(req, res) {
 
     if (!blogPost) {
       return res.status(404).json({ error: "Blog post not found" });
+    }
+
+    if (!(await screenContent(res, { content, type: "comment-safety" }))) {
+      return;
     }
 
     const comment = new Comment({
@@ -76,6 +113,10 @@ async function createReplyComment(req, res) {
     const author = await User.findById(authorId);
     if (!parentComment) {
       return res.status(404).json({ error: "Parent comment not found" });
+    }
+
+    if (!(await screenContent(res, { content, type: "reply-safety" }))) {
+      return;
     }
 
     const replyComment = new Comment({
