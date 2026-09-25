@@ -308,18 +308,14 @@ async function updateProfile(req, res) {
         const publicId = user.profileImage.split("/").pop().split(".")[0];
         await cloudinary.uploader.destroy(
           `usersAvatar/${publicId}`,
-           async (error) => {
-             if (error) {
-               console.error(error);
-               return problem(res, {
-                 req,
-                 status: 500,
-                 code: "INTERNAL_ERROR",
-                 title: "Internal server error",
-                 detail: "Error deleting previous image from Cloudinary",
-               });
-             }
-           },
+        async (error) => {
+          if (error) {
+            // Logged only: this callback fires after the response has already
+            // been sent, so answering here would be a second write and throw
+            // ERR_HTTP_HEADERS_SENT, which takes the process down.
+            console.error("Cloudinary cleanup of the previous avatar failed:", error);
+          }
+        },
         );
       }
       const croppedImage = await convertToWebp(req.file.buffer, "personalImg");
