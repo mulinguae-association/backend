@@ -1,8 +1,6 @@
 import express from "express";
 import {
   createBlogPost,
-  getPendingBlogPosts,
-  acceptBlogPost,
   deleteBlogPost,
   getAcceptedBlogPosts,
   searchBlogPosts,
@@ -22,8 +20,5 @@ router.delete("/:id", authenticateUser, deleteBlogPost);
 router.get("/search", searchBlogPosts);
 
 router.post("/:modelType/:id/:action", authenticateUser, updateInteraction);
-// admin only
-router.get("/pending", authenticateUser, getPendingBlogPosts);
-router.patch("/:id/accept", authenticateUser, acceptBlogPost);
 
 export default router;

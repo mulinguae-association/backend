@@ -102,18 +102,6 @@ async function createReplyComment(req, res) {
   }
 }
 
-async function getPendingComments(req, res) {
-  try {
-    if (!isAdminRole(req.role)) {
-      return res.status(403).json({ error: "No permission." });
-    }
-    const pendingComments = await Comment.find({ status: "pending" });
-    res.status(200).json(pendingComments);
-  } catch (error) {
-    console.error("Error retrieving blog posts:", error);
-    res.status(500).json({ error: "An error occurred" });
-  }
-}
 async function getAcceptedComments(req, res) {
   const { blogId } = req.params;
   const { pageParam = 1, limit = 10 } = req.query;
@@ -291,24 +279,6 @@ async function getCommentReplies(req, res) {
   }
 }
 
-// Accept a comment (admin moderation)
-async function acceptComment(req, res) {
-  try {
-    const { id } = req.params;
-
-    // Perform the logic to update the status of the blog post with the provided ID to "accepted"
-    // For example:
-    const comment = await Comment.findById(id);
-    comment.status = "accepted";
-    await comment.save();
-
-    res.status(200).json({ message: "Blog post accepted successfully" });
-  } catch (error) {
-    console.error("Error accepting blog post:", error);
-    res.status(500).json({ error: "An error occurred" });
-  }
-}
-
 async function deleteComment(req, res) {
   const { commentId } = req.params;
   const authorId = req.userId;
@@ -354,8 +324,6 @@ export {
   createReplyComment,
   updatedComment,
   deleteComment,
-  getPendingComments,
   getAcceptedComments,
   getCommentReplies,
-  acceptComment,
 };

@@ -20,33 +20,6 @@ export async function createBlogPost(req, res) {
   }
 }
 
-export async function getPendingBlogPosts(req, res) {
-  try {
-    if (!isAdminRole(req.role)) {
-      return res.status(403).json({ error: "No permission." });
-    }
-    const pendingPosts = await BlogPost.find({ status: "pending" });
-    res.status(200).json(pendingPosts.map((post) => post.toObject()));
-  } catch (error) {
-    console.error("Error retrieving blog posts:", error);
-    res.status(500).json({ error: "An error occurred" });
-  }
-}
-
-export async function acceptBlogPost(req, res) {
-  try {
-    const { id } = req.params;
-    if (!isAdminRole(req.role)) {
-      return res.status(403).json({ error: "No permission." });
-    }
-    await BlogPost.findByIdAndUpdate(id, { status: "accepted" });
-    return res.status(200).json({ message: "Blog post accepted successfully" });
-  } catch (error) {
-    console.error("Error accepting blog post:", error);
-    return res.status(500).json({ error: "An error occurred" });
-  }
-}
-
 export async function deleteBlogPost(req, res) {
   try {
     const { id } = req.params;

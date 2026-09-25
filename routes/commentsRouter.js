@@ -2,8 +2,6 @@ import express from "express";
 import {
   createComment, // Added: Import createComment function
   deleteComment, // Added: Import deleteComment function
-  getPendingComments,
-  acceptComment,
   createReplyComment,
   updatedComment,
   getAcceptedComments,
@@ -25,10 +23,7 @@ router.delete("/:commentId/:blogId", authenticateUser, deleteComment);
 router.post("/:modelType/:id/:action", authenticateUser, updateInteraction);
 
 //admin
-router.get("/pending", authenticateUser, getPendingComments);
 router.get("/replies/:parentCommentId", getCommentReplies);
 router.get("/:blogId/accepted", getAcceptedComments);
-router.patch("/accept/:id", authenticateUser, acceptComment);
-router.get("/accept/:id", authenticateUser, acceptComment);
 
 export default router;
