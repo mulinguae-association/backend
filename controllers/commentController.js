@@ -5,8 +5,8 @@ import Comment from "../db/models/Comment.js";
 import User from "../db/models/User.js";
 import { isAdminRole } from "../utils/isAdminRole.js";
 import { moderateSafety, ModerationUnavailableError } from "../services/moderationService.js";
+import problem from "../utils/problem.js";
 
-// Opaque codes: the client learns only that it was not published, never why.
 const REJECTED_STATUS = 422;
 const UNAVAILABLE_STATUS = 503;
 
@@ -21,16 +21,22 @@ async function screenContent(res, { content, type }) {
     if (allowed) return true;
 
     console.log(`[moderation] rejected ${type}`);
-    res
-      .status(REJECTED_STATUS)
-      .json({ error: "Your comment could not be published.", code: "CONTENT_REJECTED" });
+    problem(res, {
+      status: REJECTED_STATUS,
+      code: "CONTENT_REJECTED",
+      title: "Content rejected",
+      detail: "Your comment could not be published.",
+    });
     return false;
   } catch (error) {
     if (error instanceof ModerationUnavailableError) {
       // Fail closed: an unavailable moderator must never let content through.
-      res.status(UNAVAILABLE_STATUS).json({
-        error: "Your comment could not be published. Please try again later.",
+      problem(res, {
+        status: UNAVAILABLE_STATUS,
         code: "MODERATION_UNAVAILABLE",
+        title: "Moderation unavailable",
+        detail:
+          "Your comment could not be published. Please try again later.",
       });
       return false;
     }
@@ -51,7 +57,7 @@ async function createComment(req, res) {
     const blogPost = await BlogPost.findById(id);
 
     if (!blogPost) {
-      return res.status(404).json({ error: "Blog post not found" });
+      return problem(res, { req, status: 404, code: "BLOG_NOT_FOUND", title: "Blog post not found" });
     }
 
     if (!(await screenContent(res, { content, type: "comment-safety" }))) {
@@ -74,7 +80,7 @@ async function createComment(req, res) {
     res.status(201).json({ message: "Comment added successfully", comment });
   } catch (error) {
     console.error("Error adding comment:", error);
-    res.status(500).json({ error: "An error occurred" });
+    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
   }
 }
 async function updatedComment(req, res) {
@@ -84,13 +90,13 @@ async function updatedComment(req, res) {
     // Find the blog post with the provided ID
     const comment = await Comment.findById(id);
     if (!comment) {
-      return res.status(404).json({ error: "Comment not found" });
+      return problem(res, { req, status: 404, code: "COMMENT_NOT_FOUND", title: "Comment not found" });
     }
     if (
       comment.postedBy._id.toString() !== req.userId.toString() &&
       !isAdminRole(req.role)
     ) {
-      return res.status(403).json({ error: "No permission to edit comment" });
+      return problem(res, { req, status: 403, code: "COMMENT_NOT_EDITABLE", title: "No permission to edit comment" });
     }
 
     // Screened after the ownership check so an unauthorised edit costs no
@@ -108,7 +114,7 @@ async function updatedComment(req, res) {
     res.status(201).json({ message: "Comment updated successfully" });
   } catch (error) {
     console.error("Error updating comment:", error);
-    res.status(500).json({ error: "An error occurred" });
+    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
   }
 }
 // Create a reply comment referenced by the parent via the flat parentComment field
@@ -120,7 +126,7 @@ async function createReplyComment(req, res) {
     // find author info
     const author = await User.findById(authorId);
     if (!parentComment) {
-      return res.status(404).json({ error: "Parent comment not found" });
+      return problem(res, { req, status: 404, code: "COMMENT_NOT_FOUND", title: "Parent comment not found" });
     }
 
     if (!(await screenContent(res, { content, type: "reply-safety" }))) {
@@ -147,7 +153,7 @@ async function createReplyComment(req, res) {
       .json({ message: "Reply added successfully", comment: replyComment });
   } catch (error) {
     console.error("Error adding reply comment:", error);
-    res.status(500).json({ error: "An error occurred" });
+    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
   }
 }
 
@@ -266,7 +272,7 @@ async function getAcceptedComments(req, res) {
       .json({ acceptedComments, totalComments: totalCommentCount });
   } catch (error) {
     console.error("Error retrieving accepted comments:", error);
-    res.status(500).json({ error: "An error occurred" });
+    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
   }
 }
 
@@ -324,7 +330,7 @@ async function getCommentReplies(req, res) {
     res.status(200).json({ replies });
   } catch (error) {
     console.error("Error retrieving comment replies:", error);
-    res.status(500).json({ error: "An error occurred" });
+    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
   }
 }
 
@@ -335,7 +341,7 @@ async function deleteComment(req, res) {
   try {
     const comment = await Comment.findById(commentId);
     if (!comment) {
-      return res.status(404).json({ error: "Comment not found" });
+      return problem(res, { req, status: 404, code: "COMMENT_NOT_FOUND", title: "Comment not found" });
     }
 
     const isParentComment = comment.parentComment === null; // Check if this is a parent comment
@@ -358,12 +364,12 @@ async function deleteComment(req, res) {
 
       res.status(200).json({ message: "Comment deleted successfully" });
     } else {
-      res.status(401).json({ error: "Unauthorized action" });
+      problem(res, { req, status: 401, code: "UNAUTHORIZED", title: "Unauthorized action" });
       console.log("Unauthorized action");
     }
   } catch (error) {
     console.error("Error deleting comment:", error);
-    res.status(500).json({ error: "An error occurred" });
+    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
   }
 }
 

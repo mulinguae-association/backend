@@ -8,6 +8,7 @@ import path from "path";
 import { sendEmail } from "../utils/emailSender.js";
 import { validateHuman } from "../utils/validateHuman.js";
 import validator from "validator";
+import problem from "../utils/problem.js";
 import { handleUpload, cloudinary } from "../utils/cloundinaryConfig.js";
 import {
   ACCESS_COOKIE,
@@ -31,52 +32,63 @@ async function register(req, res) {
     const { name, email, password, confirmPassword, terms, token } = req.body;
     // check human validation
     if (!token) {
-      res.status(400).json({ error: "recaptcha token is missing!" });
+      // Without this return the request carried on into validateHuman(undefined)
+      // and tried to write a second response after the 400 was already sent.
+      return problem(res, {
+        req,
+        status: 400,
+        code: "AUTH_RECAPTCHA_REQUIRED",
+        title: "Human verification is required",
+      });
     }
     const human = await validateHuman(token);
     if (human) {
       // Check if name i entered
       if (!name) {
-        return res.status(400).json({ error: `Name is required` });
+        return problem(res, { req, status: 400, code: "AUTH_NAME_REQUIRED", title: "Name is required" });
       }
       if (!email) {
-        return res.status(400).json({ error: `Email is required` });
+        return problem(res, { req, status: 400, code: "AUTH_EMAIL_REQUIRED", title: "Email is required" });
       }
       if (!validator.isEmail(email)) {
-        return res.status(400).json({ error: "Email is not valid" });
+        return problem(res, { req, status: 400, code: "AUTH_EMAIL_INVALID", title: "Email is not valid" });
       }
       if (!terms) {
-        return res.status(400).json({ error: `Terms is required` });
+        return problem(res, { req, status: 400, code: "AUTH_TERMS_REQUIRED", title: "Terms is required" });
       }
       // Check is password is good
       if (!validator.isStrongPassword(password)) {
-        return res.status(400).json({ error: `password is not strong` });
+        return problem(res, { req, status: 400, code: "AUTH_PASSWORD_WEAK", title: "Password is not strong" });
       }
       if (!password || password.length < 8) {
-        return res.status(400).json({
-          error: `Password is required and should be at least 8 characters long`,
+        return problem(res, {
+          req,
+          status: 400,
+          code: "AUTH_PASSWORD_TOO_SHORT",
+          title: "Password is too short",
+          detail: "Password is required and should be at least 8 characters long",
         });
       }
       if (password !== confirmPassword) {
-        return res.status(400).json({ error: "passwords don't match" });
+        return problem(res, { req, status: 400, code: "AUTH_PASSWORD_MISMATCH", title: "Passwords do not match" });
       }
       // Check if email already exists
       const existingUser = await User.findOne({
         email: String(email || "").trim().toLowerCase(),
       });
       if (existingUser) {
-        return res.status(400).json({ error: "email already exists." });
+        return problem(res, { req, status: 400, code: "AUTH_EMAIL_EXISTS", title: "Email already exists" });
       }
       const newUser = new User({ name, email, password, terms });
       await newUser.save();
       return res.status(200).json({ message: "Registered successfully" });
     } else {
-      res.status(400).json({ error: "Please, you're not folling us, bot." });
+      problem(res, { req, status: 400, code: "AUTH_RECAPTCHA_FAILED", title: "Human verification failed" });
       return;
     }
   } catch (error) {
     console.error("Error during registration:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    return problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
   }
 }
 
@@ -87,11 +99,11 @@ async function login(req, res) {
       email: String(email || "").trim().toLowerCase(),
     });
     if (!user) {
-      return res.status(401).json({ error: "Invalid Credentials" });
+      return problem(res, { req, status: 401, code: "AUTH_INVALID_CREDENTIALS", title: "Invalid credentials" });
     }
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      return res.status(401).json({ error: "Invalid Credentials" });
+      return problem(res, { req, status: 401, code: "AUTH_INVALID_CREDENTIALS", title: "Invalid credentials" });
     }
 
     const accessToken = generateAccessToken(user);
@@ -100,14 +112,14 @@ async function login(req, res) {
 
     return res.json(toUserData(user));
   } catch (error) {
-    return res.status(500).json({ error: "Internal server error" });
+    return problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
   }
 }
 
 async function refresh(req, res) {
   const refreshToken = req.cookies?.[REFRESH_COOKIE];
   if (!refreshToken) {
-    return res.status(401).json({ error: "No refresh token" });
+    return problem(res, { req, status: 401, code: "AUTH_NO_REFRESH_TOKEN", title: "No refresh token" });
   }
 
   try {
@@ -115,7 +127,7 @@ async function refresh(req, res) {
     const user = await User.findById(decoded.userId);
     if (!user || (user.tokenVersion || 0) !== decoded.tokenVersion) {
       clearAuthCookies(res);
-      return res.status(401).json({ error: "Invalid refresh token" });
+      return problem(res, { req, status: 401, code: "AUTH_REFRESH_TOKEN_INVALID", title: "Invalid refresh token" });
     }
 
     const accessToken = generateAccessToken(user);
@@ -127,7 +139,7 @@ async function refresh(req, res) {
     return res.json({ userData: toUserData(user) });
   } catch (err) {
     clearAuthCookies(res);
-    return res.status(401).json({ error: "Refresh token expired or invalid" });
+    return problem(res, { req, status: 401, code: "AUTH_REFRESH_TOKEN_EXPIRED", title: "Refresh token expired or invalid" });
   }
 }
 const getProfile = (req, res) => {
@@ -139,10 +151,10 @@ const getProfile = (req, res) => {
     (err, user) => {
       if (err) {
         if (err.name === "TokenExpiredError") {
-          return res.status(401).json({ message: "Token Expired" });
+          return problem(res, { req, status: 401, code: "AUTH_TOKEN_EXPIRED", title: "Token expired" });
         }
         // Handle other JWT errors here, if needed
-        return res.status(401).json({ message: "Invalid token." });
+        return problem(res, { req, status: 401, code: "AUTH_INVALID_TOKEN", title: "Invalid token" });
       }
       return res.json(user);
     },
@@ -173,7 +185,7 @@ async function forgotPassword(req, res) {
 
   try {
     if (!email) {
-      return res.status(400).json({ error: "email is required" });
+      return problem(res, { req, status: 400, code: "AUTH_EMAIL_REQUIRED", title: "Email is required" });
     }
     const user = await User.findOne({ email });
     if (user) {
@@ -204,13 +216,13 @@ async function forgotPassword(req, res) {
         await sendEmail(mailOptions);
         return res.status(200).json({ message: "Email Sent" });
       } catch (error) {
-        return res.status(400).json({ message: "Faild to send email" });
+        return problem(res, { req, status: 400, code: "AUTH_EMAIL_SEND_FAILED", title: "Failed to send email" });
       }
     } else {
-      return res.status(400).json({ error: "Invaild Email" });
+      return problem(res, { req, status: 400, code: "AUTH_EMAIL_INVALID", title: "Invalid email" });
     }
   } catch (err) {
-    return res.status(400).json({ error: err });
+    return problem(res, { req, status: 400, code: "AUTH_REQUEST_FAILED", title: "Request could not be processed" });
   }
 }
 async function ResetPassword(req, res) {
@@ -240,21 +252,24 @@ async function ResetPassword(req, res) {
               message: "Password Changed Successfully",
             });
           } else {
-            return res.status(400).json({ message: "Link has been Expired" });
+            return problem(res, { req, status: 400, code: "AUTH_RESET_LINK_EXPIRED", title: "Reset link has expired" });
           }
         } catch (err) {
-          return res.status(400).json({ message: "Link has been Expired" });
+          return problem(res, { req, status: 400, code: "AUTH_RESET_LINK_EXPIRED", title: "Reset link has expired" });
         }
       } else {
-        return res
-          .status(400)
-          .json({ message: "password and confirm password doesn't match" });
+        return problem(res, {
+          req,
+          status: 400,
+          code: "AUTH_PASSWORD_MISMATCH",
+          title: "Passwords do not match",
+        });
       }
     } else {
-      return res.status(400).json({ message: "All fields are required" });
+      return problem(res, { req, status: 400, code: "AUTH_FIELDS_REQUIRED", title: "All fields are required" });
     }
   } catch (err) {
-    return res.status(400).json({ message: err });
+    return problem(res, { req, status: 400, code: "AUTH_REQUEST_FAILED", title: "Request could not be processed" });
   }
 }
 
@@ -264,15 +279,18 @@ async function updateProfile(req, res) {
   const userId = req.userId;
   try {
     if (!name && !email && !req.file) {
-      return res
-        .status(400)
-        .json({ error: "Name OR Email OR avatar are required" });
+      return problem(res, { req, status: 400, code: "AUTH_FIELDS_REQUIRED", title: "Name, email or avatar are required" });
     }
 
     const user = await User.findById(userId);
 
     if (!user) {
-      return res.status(400).json({ error: "User Not Found!" });
+      return problem(res, {
+        req,
+        status: 400,
+        code: "AUTH_USER_NOT_FOUND",
+        title: "User not found",
+      });
     }
     // Check if the email already exists in the database
     if (email !== user.email) {
@@ -281,7 +299,7 @@ async function updateProfile(req, res) {
       });
 
       if (existingUser) {
-        return res.status(400).json({ error: "Email already exists" });
+        return problem(res, { req, status: 400, code: "AUTH_EMAIL_EXISTS", title: "Email already exists" });
       }
     }
     if (req.file) {
@@ -290,14 +308,18 @@ async function updateProfile(req, res) {
         const publicId = user.profileImage.split("/").pop().split(".")[0];
         await cloudinary.uploader.destroy(
           `usersAvatar/${publicId}`,
-          async (error) => {
-            if (error) {
-              console.error(error);
-              return res.status(500).json({
-                message: "Error deleting previous image from Cloudinary",
-              });
-            }
-          },
+           async (error) => {
+             if (error) {
+               console.error(error);
+               return problem(res, {
+                 req,
+                 status: 500,
+                 code: "INTERNAL_ERROR",
+                 title: "Internal server error",
+                 detail: "Error deleting previous image from Cloudinary",
+               });
+             }
+           },
         );
       }
       const croppedImage = await convertToWebp(req.file.buffer, "personalImg");
@@ -327,7 +349,7 @@ async function updateProfile(req, res) {
       message: "Profile updated successfully",
     });
   } catch (err) {
-    return res.status(400).json({ error: err.message });
+    return problem(res, { req, status: 400, code: "AUTH_REQUEST_FAILED", title: "Request could not be processed" });
   }
 }
 export {

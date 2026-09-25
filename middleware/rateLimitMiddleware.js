@@ -6,6 +6,7 @@
 
 import { getRedisClient } from "../services/redisClient.js";
 import { getClientIP } from "../utils/request.js";
+import problem from "../utils/problem.js";
 
 /**
  * Sliding-window rate limit check for a key.
@@ -86,9 +87,13 @@ export const createChatbotRateLimiter = ({
     if (exceeded) {
       const retryAfter = exceeded.resetAt - Math.ceil(Date.now() / 1000);
       res.setHeader("Retry-After", Math.max(1, retryAfter));
-      return res.status(429).json({
-        error: "Chatbot rate limit exceeded. Please try again later.",
-        retryAfter,
+      return problem(res, {
+        req,
+        status: 429,
+        code: "RATE_LIMITED",
+        title: "Rate limit exceeded",
+        detail: "Chatbot rate limit exceeded. Please try again later.",
+        extensions: { retryAfter },
       });
     }
 
@@ -134,9 +139,14 @@ export const createSubmissionRateLimiter = ({
       exceeded.resetAt - Math.ceil(Date.now() / 1000),
     );
     res.setHeader("Retry-After", retryAfter);
-    return res
-      .status(429)
-      .json({ error: errorMessage, code: "RATE_LIMITED", retryAfter });
+    return problem(res, {
+      req,
+      status: 429,
+      code: "RATE_LIMITED",
+      title: "Rate limit exceeded",
+      detail: errorMessage,
+      extensions: { retryAfter },
+    });
   };
 };
 

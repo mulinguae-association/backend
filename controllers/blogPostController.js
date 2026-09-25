@@ -5,6 +5,7 @@ import {
   moderateBlogPost,
   ModerationUnavailableError,
 } from "../services/moderationService.js";
+import problem from "../utils/problem.js";
 
 const REJECTED_STATUS = 422;
 const UNAVAILABLE_STATUS = 503;
@@ -21,25 +22,34 @@ export async function createBlogPost(req, res) {
 
       if (!verdict.allowed) {
         console.log("[moderation] rejected blog-safety");
-        return res.status(REJECTED_STATUS).json({
-          error: "Your blog could not be published.",
+        return problem(res, {
+          req,
+          status: REJECTED_STATUS,
           code: "CONTENT_REJECTED",
+          title: "Content rejected",
+          detail: "Your blog could not be published.",
         });
       }
 
       if (!verdict.relevant) {
         console.log("[moderation] rejected blog-relevance");
-        return res.status(REJECTED_STATUS).json({
-          error:
-            "Your blog could not be published because it does not match the site's content guidelines.",
+        return problem(res, {
+          req,
+          status: REJECTED_STATUS,
           code: "SCOPE_REJECTED",
+          title: "Out of scope",
+          detail:
+            "Your blog could not be published because it does not match the site's content guidelines.",
         });
       }
     } catch (error) {
       if (error instanceof ModerationUnavailableError) {
-        return res.status(UNAVAILABLE_STATUS).json({
-          error: "Your blog could not be published. Please try again later.",
+        return problem(res, {
+          req,
+          status: UNAVAILABLE_STATUS,
           code: "MODERATION_UNAVAILABLE",
+          title: "Moderation unavailable",
+          detail: "Your blog could not be published. Please try again later.",
         });
       }
       throw error;
@@ -54,7 +64,12 @@ export async function createBlogPost(req, res) {
     });
   } catch (error) {
     console.error("Error submitting blog post:", error);
-    return res.json({ error: "An error occurred" });
+    return problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
   }
 }
 
@@ -64,17 +79,35 @@ export async function deleteBlogPost(req, res) {
     const userId = req.userId;
 
     const blogPost = await BlogPost.findById(id);
+    if (!blogPost) {
+      return problem(res, {
+        req,
+        status: 404,
+        code: "BLOG_NOT_FOUND",
+        title: "Blog post not found",
+      });
+    }
+
     if (blogPost.authorId == userId || isAdminRole(req.role)) {
       await BlogPost.findByIdAndDelete(id);
       return res
         .json({ message: "Blog post deleted successfully" });
     } else {
-      return res
-        .json({ error: "No permission to delete blog post" });
+      return problem(res, {
+        req,
+        status: 403,
+        code: "BLOG_NOT_DELETABLE",
+        title: "No permission to delete blog post",
+      });
     }
 
   } catch (error) {
-    return res.json({ error: "An error occurred" });
+    return problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
   }
 }
 
@@ -113,7 +146,7 @@ export async function getAcceptedBlogPosts(req, res) {
     });
   } catch (error) {
     console.error("Error retrieving accepted blog posts:", error);
-    res.status(500).json({ error: "An error occurred" });
+    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
   }
 }
 
@@ -143,6 +176,6 @@ export async function searchBlogPosts(req, res) {
     res.status(200).json(searchResults);
   } catch (error) {
     console.error("Error searching blog posts:", error);
-    res.status(500).json({ error: "An error occurred" });
+    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
   }
 }

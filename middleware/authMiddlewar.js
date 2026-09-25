@@ -2,13 +2,18 @@
 
 import jwt from "jsonwebtoken";
 import User from "../db/models/User.js";
+import problem from "../utils/problem.js";
 
 const authenticateUser = async (req, res, next) => {
   const token = req.cookies.token;
   if (!token)
-    return res
-      .status(401)
-      .json({ error: "Authentication required. Please log in" });
+    return problem(res, {
+      req,
+      status: 401,
+      code: "AUTH_REQUIRED",
+      title: "Authentication required",
+      detail: "Authentication required. Please log in",
+    });
 
   try {
     // Verify the token and decode its payload
@@ -29,11 +34,21 @@ const authenticateUser = async (req, res, next) => {
     next();
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {
-      return res
-        .status(401)
-        .json({ error: "Token has expired. Please log in again." });
+      return problem(res, {
+        req,
+        status: 401,
+        code: "AUTH_TOKEN_EXPIRED",
+        title: "Token expired",
+        detail: "Token has expired. Please log in again.",
+      });
     }
-    return res.status(401).json({ error: "Invalid token." });
+    return problem(res, {
+      req,
+      status: 401,
+      code: "AUTH_INVALID_TOKEN",
+      title: "Invalid token",
+      detail: "Invalid token.",
+    });
   }
 };
 
