@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const commentSchema = new mongoose.Schema({
   content: String,
   createdAt: { type: Date, default: Date.now },
-  status: { type: String, default: "pending" },
+  status: { type: String, default: "accepted" },
   likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   unlikes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   loves: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],

@@ -7,8 +7,7 @@ export async function createBlogPost(req, res) {
     const { title, subTitle, content } = req.body;
     const authorId = req.userId;
     const author = await User.findById(authorId)
-    const blogPost = new BlogPost({ title, subTitle, content, postedBy: author });
-    isAdminRole(req.role) ? blogPost.status = "accepted" : blogPost.status = "pending"
+    const blogPost = new BlogPost({ title, subTitle, content, postedBy: author, status: "accepted" });
     await blogPost.save();
 
     return res.json({

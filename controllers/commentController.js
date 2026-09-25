@@ -26,7 +26,7 @@ async function createComment(req, res) {
       blogId: id,
       postedBy: author,
       parentComment: null,
-      status: isAdminRole(req.role) ? "accepted" : "pending",
+      status: "accepted",
     });
 
     await comment.save();
@@ -55,7 +55,6 @@ async function updatedComment(req, res) {
     ) {
       // Update the comment content
       comment.content = content;
-      comment.status = isAdminRole(req.role) ? "accepted" : "pending";
 
       // Save the updated comment
       await comment.save();
@@ -84,7 +83,7 @@ async function createReplyComment(req, res) {
       blogId,
       postedBy: author,
       parentComment: parentCommentId,
-      status: isAdminRole(req.role) ? "accepted" : "pending",
+      status: "accepted",
     });
 
     await replyComment.save();

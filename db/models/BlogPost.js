@@ -4,7 +4,7 @@ const blogPostSchema = new Schema({
   title: { type: String, required: true },
   subTitle: { type: String, required: false },
   content: { type: String, required: true },
-  status: { type: String, default: "pending" },
+  status: { type: String, default: "accepted" },
   createdAt: { type: Date, default: Date.now },
   likes: [{ type: Schema.Types.ObjectId, ref: "User" }],
   unlikes: [{ type: Schema.Types.ObjectId, ref: "User" }],
