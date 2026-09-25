@@ -87,17 +87,25 @@ async function updatedComment(req, res) {
       return res.status(404).json({ error: "Comment not found" });
     }
     if (
-      comment.postedBy._id.toString() === req.userId.toString() ||
-      isAdminRole(req.role)
+      comment.postedBy._id.toString() !== req.userId.toString() &&
+      !isAdminRole(req.role)
     ) {
-      // Update the comment content
-      comment.content = content;
-
-      // Save the updated comment
-      await comment.save();
-
-      res.status(201).json({ message: "Comment updated successfully" });
+      return res.status(403).json({ error: "No permission to edit comment" });
     }
+
+    // Screened after the ownership check so an unauthorised edit costs no
+    // moderation call, and the edit is all-or-nothing like creation.
+    if (!(await screenContent(res, { content, type: "comment-edit-safety" }))) {
+      return;
+    }
+
+    // Update the comment content
+    comment.content = content;
+
+    // Save the updated comment
+    await comment.save();
+
+    res.status(201).json({ message: "Comment updated successfully" });
   } catch (error) {
     console.error("Error updating comment:", error);
     res.status(500).json({ error: "An error occurred" });
