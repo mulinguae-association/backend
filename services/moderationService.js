@@ -18,9 +18,13 @@ const SAFETY_MODEL = "openai/gpt-oss-safeguard-20b";
 const RELEVANCE_MODEL = "openai/gpt-oss-20b";
 
 const MAX_CONTENT_CHARS = 4000;
-// A tighter cap truncates the JSON mid-object on long input, and the parser then
-// correctly rejects it as a moderation failure, which surfaces as a 503.
+// The models spend completion tokens on reasoning, and sometimes exhaust the cap
+// before emitting anything at all: measured finish_reason "length" with empty
+// content, which fail-closed turns into a 503 for a perfectly valid comment.
+// 1200 is ample the rest of the time, so the truncated case gets one wider
+// attempt rather than a permanently larger budget on every call.
 const MAX_COMPLETION_TOKENS = 1200;
+const RETRY_COMPLETION_TOKENS = 3000;
 
 /**
  * Raised when a moderation decision could not be obtained at all.
@@ -326,48 +330,78 @@ const runModerationPrompt = async ({ type, model, policy, subject, field }) => {
     { role: "user", content: subject },
   ];
 
-  let completion;
-  try {
-    // Budget is checked before the call so an exhausted day refuses the work
-    // instead of spending it. A guard failure is indistinguishable from any
-    // other unavailable moderator, which is the intent: fail closed.
+  // Each attempt is budgeted and accounted for on its own, so a retry cannot
+  // slip past the daily guard and its tokens are recorded as they are spent.
+  const attempt = async (maxTokens) => {
+    // Checked before the call so an exhausted day refuses the work instead of
+    // spending it. A guard failure is indistinguishable from any other
+    // unavailable moderator, which is the intent: fail closed.
     await assertBudgetAvailable(model);
 
-    completion = await getGroqCompletion({
+    const completion = await getGroqCompletion({
       messages,
       model,
       temperature: 0,
-      maxTokens: MAX_COMPLETION_TOKENS,
+      maxTokens,
       stream: false,
       // Backoff is 3s/6s/12s: giving up early turns a rate limit into a
       // rejection of a comment that is perfectly fine.
       maxRetries: 4,
       retryDelayMs: 3000,
     });
-  } catch (error) {
-    console.error(
-      `[moderation] ${type} request failed (model=${model})`,
-      error?.message,
+
+    // Accounted for a completed call, and never allowed to fail the submission:
+    // these tokens are already spent.
+    await recordSpend(model, completion?.usage);
+
+    return completion;
+  };
+
+  // Null instead of throwing, so a retry can be decided on the result.
+  const readVerdict = (completion) => {
+    try {
+      return parseModerationVerdict(
+        completion?.choices?.[0]?.message?.content,
+        field,
+      );
+    } catch {
+      return null;
+    }
+  };
+
+  const send = async (maxTokens) => {
+    try {
+      return await attempt(maxTokens);
+    } catch (error) {
+      console.error(
+        `[moderation] ${type} request failed (model=${model})`,
+        error?.message,
+      );
+      throw new ModerationUnavailableError(type, error);
+    }
+  };
+
+  let completion = await send(MAX_COMPLETION_TOKENS);
+  let verdict = readVerdict(completion);
+
+  // Only the truncated case is retried: a payload that is present but not JSON
+  // is a different fault, and retrying it would spend tokens for nothing.
+  if (!verdict && completion?.choices?.[0]?.finish_reason === "length") {
+    console.warn(
+      `[moderation] ${type} used its whole completion budget without output; retrying once`,
     );
-    throw new ModerationUnavailableError(type, error);
+    completion = await send(RETRY_COMPLETION_TOKENS);
+    verdict = readVerdict(completion);
   }
 
-  // Accounted only for a completed call, and never allowed to fail the
-  // submission: these tokens are already spent.
-  await recordSpend(model, completion?.usage);
-
-  try {
-    const { value, reason } = parseModerationVerdict(
-      completion?.choices?.[0]?.message?.content,
-      field,
-    );
-    return { [field]: value, reason };
-  } catch (error) {
+  if (!verdict) {
     console.error(
       `[moderation] ${type} returned an unusable result (model=${model})`,
     );
-    throw error;
+    throw new ModerationUnavailableError(type);
   }
+
+  return { [field]: verdict.value, reason: verdict.reason };
 };
 
 /**
