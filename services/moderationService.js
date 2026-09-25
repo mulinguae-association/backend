@@ -8,6 +8,7 @@
  */
 
 import { getGroqCompletion } from "./groqService.js";
+import { assertBudgetAvailable, recordSpend } from "./tokenBudgetService.js";
 
 // Scope is judged on its own model because Groq meters rate limits per model id
 // and the chatbot shares 120b. Sharing it would make scope compete with chat
@@ -327,6 +328,11 @@ const runModerationPrompt = async ({ type, model, policy, subject, field }) => {
 
   let completion;
   try {
+    // Budget is checked before the call so an exhausted day refuses the work
+    // instead of spending it. A guard failure is indistinguishable from any
+    // other unavailable moderator, which is the intent: fail closed.
+    await assertBudgetAvailable(model);
+
     completion = await getGroqCompletion({
       messages,
       model,
@@ -345,6 +351,10 @@ const runModerationPrompt = async ({ type, model, policy, subject, field }) => {
     );
     throw new ModerationUnavailableError(type, error);
   }
+
+  // Accounted only for a completed call, and never allowed to fail the
+  // submission: these tokens are already spent.
+  await recordSpend(model, completion?.usage);
 
   try {
     const { value, reason } = parseModerationVerdict(
