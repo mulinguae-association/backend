@@ -21,6 +21,24 @@ const resolveCategory = (value) => {
   return BLOG_CATEGORIES.includes(value) ? value : null;
 };
 
+ // Query condition for a category. General also matches documents with no 
+const categoryCondition = (category) =>
+  category === DEFAULT_BLOG_CATEGORY
+    ? { $in: [DEFAULT_BLOG_CATEGORY, null] }
+    : category;
+
+/** A search term is matched literally, so a stray "(" cannot 500 the endpoint. */
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const invalidCategoryProblem = (req, res) =>
+  problem(res, {
+    req,
+    status: REJECTED_STATUS,
+    code: "CATEGORY_INVALID",
+    title: "Unknown category",
+    detail: "That category does not exist.",
+  });
+
 export async function createBlogPost(req, res) {
   try {
     const { title, subTitle, content, category } = req.body;
@@ -30,13 +48,7 @@ export async function createBlogPost(req, res) {
     // category is only a label, so it is never worth spending the budget on.
     const resolvedCategory = resolveCategory(category);
     if (!resolvedCategory) {
-      return problem(res, {
-        req,
-        status: REJECTED_STATUS,
-        code: "CATEGORY_INVALID",
-        title: "Unknown category",
-        detail: "That category does not exist.",
-      });
+      return invalidCategoryProblem(req, res);
     }
     const author = await User.findById(authorId)
 
@@ -112,7 +124,9 @@ export async function deleteBlogPost(req, res) {
       });
     }
 
-    if (blogPost.authorId == userId || isAdminRole(req.role)) {
+    // The author lives on `postedBy`; the schema has no `authorId`. Both sides
+    // are stringified because one is an ObjectId and the other may be a string.
+    if (String(blogPost.postedBy) === String(userId) || isAdminRole(req.role)) {
       await BlogPost.findByIdAndDelete(id);
       return res
         .json({ message: "Blog post deleted successfully" });
@@ -146,22 +160,9 @@ export async function getAcceptedBlogPosts(req, res) {
     if (req.query.category) {
       const category = resolveCategory(req.query.category);
       if (!category) {
-        return problem(res, {
-          req,
-          status: 422,
-          code: "CATEGORY_INVALID",
-          title: "Unknown category",
-          detail: "That category does not exist.",
-        });
+        return invalidCategoryProblem(req, res);
       }
-      filter.category =
-        category === DEFAULT_BLOG_CATEGORY
-          ? // A null match also selects documents with no category field at
-            // all, so posts written before categories existed still appear
-            // under General. $in rather than $or, because the cursor branch
-            // below already owns filter.$or.
-            { $in: [DEFAULT_BLOG_CATEGORY, null] }
-          : category;
+      filter.category = categoryCondition(category);
     }
 
     if (cursor) {
@@ -198,22 +199,39 @@ export async function getAcceptedBlogPosts(req, res) {
 }
 
 export async function searchBlogPosts(req, res) {
-  const searchQuery = req.query.q;
+  const searchQuery = typeof req.query.q === "string" ? req.query.q : "";
   try {
-    const searchRegex = new RegExp(searchQuery, "i"); // Case-insensitive search
-    // find users matching the query 
+    // Case-insensitive, matched literally so a term like "c++" or "(" is not
+    // read as a pattern.
+    const searchRegex = new RegExp(escapeRegex(searchQuery), "i");
+    // find users matching the query
     const users = await User.find({
       name: { $regex: searchRegex }
     }).exec();
 
     const userIds = users.map(user => user._id);
-    const searchResults = await BlogPost.find({
+    const filter = {
       status: "accepted",
       $or: [
         { title: { $regex: searchRegex } },
+        // So typing a category name finds its posts. The stored value is the
+        // slug, so this matches the English name and not the translated label.
+        { category: { $regex: searchRegex } },
         { postedBy: { $in: userIds } },
       ],
-    }).sort({ createdAt: -1 })
+    };
+
+    // The category filter narrows the results, same rules as the feed.
+    if (req.query.category) {
+      const category = resolveCategory(req.query.category);
+      if (!category) {
+        return invalidCategoryProblem(req, res);
+      }
+      filter.category = categoryCondition(category);
+    }
+
+    const searchResults = await BlogPost.find(filter)
+      .sort({ createdAt: -1 })
       .populate({
         path: "postedBy",
         model: "User",
