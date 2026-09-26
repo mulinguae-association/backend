@@ -150,4 +150,24 @@ export const createSubmissionRateLimiter = ({
   };
 };
 
-export default { createChatbotRateLimiter, createSubmissionRateLimiter };
+/**
+ * One limiter instance for every reaction, mounted on both the comment and blog
+ * routers. Like, unlike and love deliberately share a single bucket: they are the
+ * same action to the database, and a user toggling one reaction repeatedly is
+ * the behaviour worth capping. Built once here so the shared bucket holds by
+ * construction rather than by two route files agreeing on a key prefix.
+ */
+export const interactionRateLimiter = createSubmissionRateLimiter({
+  keyPrefix: "interaction",
+  windows: [
+    { limit: 120, windowSeconds: 3600 },
+    { limit: 1000, windowSeconds: 86400 },
+  ],
+  errorMessage: "You are reacting too quickly. Please wait before trying again.",
+});
+
+export default {
+  createChatbotRateLimiter,
+  createSubmissionRateLimiter,
+  interactionRateLimiter,
+};

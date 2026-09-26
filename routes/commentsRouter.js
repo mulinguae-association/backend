@@ -8,7 +8,10 @@ import {
   getCommentReplies,
 } from "../controllers/commentController.js";
 import authenticateUser from "../middleware/authMiddlewar.js";
-import { createSubmissionRateLimiter } from "../middleware/rateLimitMiddleware.js";
+import {
+  createSubmissionRateLimiter,
+  interactionRateLimiter,
+} from "../middleware/rateLimitMiddleware.js";
 import updateInteraction from "../controllers/ineractionsController.js";
 const router = express.Router();
 
@@ -37,8 +40,13 @@ router.patch("/update/:id", authenticateUser, updatedComment);
 
 // API route for deleting a comment from a blog post
 router.delete("/:commentId/:blogId", authenticateUser, deleteComment);
-// interaction with comments
-router.post("/:modelType/:id/:action", authenticateUser, updateInteraction);
+// interaction with comments: like, unlike, love
+router.post(
+  "/:modelType/:id/:action",
+  authenticateUser,
+  interactionRateLimiter,
+  updateInteraction,
+);
 
 //admin
 router.get("/replies/:parentCommentId", getCommentReplies);

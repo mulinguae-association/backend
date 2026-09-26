@@ -6,7 +6,7 @@ import {
   searchBlogPosts,
 } from "../controllers/blogPostController.js";
 import authenticateUser from "../middleware/authMiddlewar.js";
-import { createSubmissionRateLimiter } from "../middleware/rateLimitMiddleware.js";
+import { createSubmissionRateLimiter, interactionRateLimiter } from "../middleware/rateLimitMiddleware.js";
 import updateInteraction from "../controllers/ineractionsController.js";
 const router = express.Router();
 
@@ -29,6 +29,14 @@ router.delete("/:id", authenticateUser, deleteBlogPost);
 // api route for search a blog post 
 router.get("/search", searchBlogPosts);
 
-router.post("/:modelType/:id/:action", authenticateUser, updateInteraction);
+// Reactions on a blog post. Shares the comment interaction bucket on purpose:
+// it is the same limiter instance, so a user cannot get 120/hour here on top of
+// 120/hour there.
+router.post(
+  "/:modelType/:id/:action",
+  authenticateUser,
+  interactionRateLimiter,
+  updateInteraction,
+);
 
 export default router;
