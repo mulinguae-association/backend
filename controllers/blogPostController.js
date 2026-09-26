@@ -1,4 +1,7 @@
-import BlogPost from "../db/models/BlogPost.js";
+import BlogPost, {
+  BLOG_CATEGORIES,
+  DEFAULT_BLOG_CATEGORY,
+} from "../db/models/BlogPost.js";
 import User from "../db/models/User.js";
 import { isAdminRole } from "../utils/isAdminRole.js";
 import {
@@ -10,10 +13,31 @@ import problem from "../utils/problem.js";
 const REJECTED_STATUS = 422;
 const UNAVAILABLE_STATUS = 503;
 
+/** An absent or empty category means the default bucket, not an error. */
+const resolveCategory = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return DEFAULT_BLOG_CATEGORY;
+  }
+  return BLOG_CATEGORIES.includes(value) ? value : null;
+};
+
 export async function createBlogPost(req, res) {
   try {
-    const { title, subTitle, content } = req.body;
+    const { title, subTitle, content, category } = req.body;
     const authorId = req.userId;
+
+    // Checked before moderation: an unknown slug costs no Groq call, and the
+    // category is only a label, so it is never worth spending the budget on.
+    const resolvedCategory = resolveCategory(category);
+    if (!resolvedCategory) {
+      return problem(res, {
+        req,
+        status: REJECTED_STATUS,
+        code: "CATEGORY_INVALID",
+        title: "Unknown category",
+        detail: "That category does not exist.",
+      });
+    }
     const author = await User.findById(authorId)
 
     // Nothing is persisted unless both checks pass; an outage rejects too.
@@ -55,7 +79,7 @@ export async function createBlogPost(req, res) {
       throw error;
     }
 
-    const blogPost = new BlogPost({ title, subTitle, content, postedBy: author, status: "accepted" });
+    const blogPost = new BlogPost({ title, subTitle, content, postedBy: author, category: resolvedCategory, status: "accepted" });
     await blogPost.save();
 
     return res.json({
@@ -116,6 +140,29 @@ export async function getAcceptedBlogPosts(req, res) {
     const limit = parseInt(req.query.limit) || 5;
     const cursor = req.query.cursor;
     const filter = { status: "accepted" };
+
+    // No category param means the whole feed; the cursor is unchanged either
+    // way, so paging stays consistent within whichever view was opened.
+    if (req.query.category) {
+      const category = resolveCategory(req.query.category);
+      if (!category) {
+        return problem(res, {
+          req,
+          status: 422,
+          code: "CATEGORY_INVALID",
+          title: "Unknown category",
+          detail: "That category does not exist.",
+        });
+      }
+      filter.category =
+        category === DEFAULT_BLOG_CATEGORY
+          ? // A null match also selects documents with no category field at
+            // all, so posts written before categories existed still appear
+            // under General. $in rather than $or, because the cursor branch
+            // below already owns filter.$or.
+            { $in: [DEFAULT_BLOG_CATEGORY, null] }
+          : category;
+    }
 
     if (cursor) {
       const lastPost = await BlogPost.findById(cursor).select("createdAt _id").lean();
