@@ -1,10 +1,33 @@
+import mongoose from "mongoose";
 import BlogPost from "../db/models/BlogPost.js";
 import Comment from "../db/models/Comment.js";
+
+// The bucket toggle is decided against the document as it stands at the moment
+// of the write, and the user is dropped from the other two buckets in that same
+// update, so a reaction can never end up in more than one of them.
+const toggleBucket = (field, userId) => {
+  const current = { $ifNull: [`$${field}`, []] };
+  return {
+    $cond: [
+      { $in: [userId, current] },
+      { $filter: { input: current, cond: { $ne: ["$$this", userId] } } },
+      { $concatArrays: [current, [userId]] },
+    ],
+  };
+};
+
+const dropFromBucket = (field, userId) => ({
+  $filter: {
+    input: { $ifNull: [`$${field}`, []] },
+    cond: { $ne: ["$$this", userId] },
+  },
+});
 
 async function updateInteraction(req, res) {
   try {
     const { modelType, id, action } = req.params;
-    const userId = req.userId;
+    // Buckets are ObjectId-typed and a pipeline update is not cast by Mongoose.
+    const userId = new mongoose.Types.ObjectId(String(req.userId));
     let model;
 
     if (modelType === "comment") {
@@ -28,29 +51,27 @@ async function updateInteraction(req, res) {
       return res.status(400).json({ error: "Invalid action" });
     }
 
-    // Toggle atomically with mtomic operators: addToSet/pull are idempotent
-    // and never touch __v, so even concurrent like plus love clicks cannot
-    // throw a Mongoose VersionError.
     const others = ["likes", "unlikes", "loves"].filter(
       (type) => type !== interactionType,
     );
 
-    const already = await model.exists({
-      _id: id,
-      [interactionType]: userId,
-    });
-
+    // One atomic write. $addToSet and $pull are each atomic, but choosing
+    // between them needs a read first, so two opposing clicks can interleave
+    // between that read and the write. A pipeline update is evaluated against
+    // the committed document, so the later write sees the earlier one's result
+    // and clears the buckets it no longer needs. It leaves __v alone, so no
+    // VersionError under concurrency either.
     const doc = await model.findOneAndUpdate(
       { _id: id },
-      already
-        ? { $pull: { [interactionType]: userId } }
-        : {
-            $addToSet: { [interactionType]: userId },
-            $pull: {
-              [others[0]]: userId,
-              [others[1]]: userId,
-            },
+      [
+        {
+          $set: {
+            [interactionType]: toggleBucket(interactionType, userId),
+            [others[0]]: dropFromBucket(others[0], userId),
+            [others[1]]: dropFromBucket(others[1], userId),
           },
+        },
+      ],
       { new: true },
     );
 
