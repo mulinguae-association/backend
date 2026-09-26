@@ -11,6 +11,8 @@ import authenticateUser from "../middleware/authMiddlewar.js";
 import {
   createSubmissionRateLimiter,
   interactionRateLimiter,
+  commentEditRateLimiter,
+  deleteRateLimiter,
 } from "../middleware/rateLimitMiddleware.js";
 import updateInteraction from "../controllers/ineractionsController.js";
 const router = express.Router();
@@ -36,10 +38,20 @@ router.post(
   createReplyComment,
 );
 
-router.patch("/update/:id", authenticateUser, updatedComment);
+router.patch(
+  "/update/:id",
+  authenticateUser,
+  commentEditRateLimiter,
+  updatedComment,
+);
 
 // API route for deleting a comment from a blog post
-router.delete("/:commentId/:blogId", authenticateUser, deleteComment);
+router.delete(
+  "/:commentId/:blogId",
+  authenticateUser,
+  deleteRateLimiter,
+  deleteComment,
+);
 // interaction with comments: like, unlike, love
 router.post(
   "/:modelType/:id/:action",

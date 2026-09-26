@@ -6,7 +6,11 @@ import {
   searchBlogPosts,
 } from "../controllers/blogPostController.js";
 import authenticateUser from "../middleware/authMiddlewar.js";
-import { createSubmissionRateLimiter, interactionRateLimiter } from "../middleware/rateLimitMiddleware.js";
+import {
+  createSubmissionRateLimiter,
+  interactionRateLimiter,
+  deleteRateLimiter,
+} from "../middleware/rateLimitMiddleware.js";
 import updateInteraction from "../controllers/ineractionsController.js";
 const router = express.Router();
 
@@ -24,7 +28,7 @@ router.post("/", authenticateUser, blogRateLimiter, createBlogPost);
 router.get("/accepted", getAcceptedBlogPosts);
 
 // API route for deleting a blog post
-router.delete("/:id", authenticateUser, deleteBlogPost);
+router.delete("/:id", authenticateUser, deleteRateLimiter, deleteBlogPost);
 
 // api route for search a blog post 
 router.get("/search", searchBlogPosts);

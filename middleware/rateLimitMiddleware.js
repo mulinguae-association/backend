@@ -163,11 +163,34 @@ export const interactionRateLimiter = createSubmissionRateLimiter({
     { limit: 120, windowSeconds: 3600 },
     { limit: 1000, windowSeconds: 86400 },
   ],
-  errorMessage: "You are reacting too quickly. Please wait before trying again.",
+  errorMessage:
+    "You are reacting too quickly. Please wait before trying again.",
+});
+
+export const commentEditRateLimiter = createSubmissionRateLimiter({
+  keyPrefix: "comment-edit",
+  windows: [
+    { limit: 30, windowSeconds: 3600 },
+    { limit: 300, windowSeconds: 86400 },
+  ],
+  errorMessage:
+    "You are editing comments too quickly. Please wait before trying again.",
+});
+
+export const deleteRateLimiter = createSubmissionRateLimiter({
+  keyPrefix: "delete",
+  windows: [
+    { limit: 20, windowSeconds: 3600 },
+    { limit: 50, windowSeconds: 86400 },
+  ],
+  errorMessage:
+    "You are deleting too quickly. Please wait before trying again.",
 });
 
 export default {
   createChatbotRateLimiter,
   createSubmissionRateLimiter,
   interactionRateLimiter,
+  commentEditRateLimiter,
+  deleteRateLimiter,
 };
