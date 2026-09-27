@@ -342,17 +342,33 @@ async function deleteComment(req, res) {
       comment.postedBy._id.toString() === authorId.toString() ||
       isAdminRole(req.role)
     ) {
+      // The whole subtree under whatever is being deleted, in one server-side
+      // $graphLookup. Walking it level by level cost two round trips per level,
+      // which is what made a 2-level delete take ~3.4s. The root is part of the
+      // result, so this also removes the comment being deleted.
+      const subtree = await Comment.aggregate([
+        { $match: { _id: comment._id } },
+        {
+          $graphLookup: {
+            from: Comment.collection.collectionName,
+            startWith: "$_id",
+            connectFromField: "_id",
+            connectToField: "parentComment",
+            as: "descendants",
+          },
+        },
+        { $project: { ids: { $concatArrays: [["$_id"], "$descendants._id"] } } },
+      ]);
+      await Comment.deleteMany({
+        _id: { $in: subtree[0]?.ids ?? [comment._id] },
+      });
+
       if (isParentComment) {
-        // Delete all replies of this parent comment
-        await Comment.deleteMany({ parentComment: commentId });
         // Decrement blog post parent comment count
         await BlogPost.findByIdAndUpdate(req.params.blogId, {
           $inc: { commentsCount: -1 },
         });
       }
-
-      // Delete the comment
-      await Comment.findByIdAndDelete(commentId);
 
       res.status(200).json({ message: "Comment deleted successfully" });
     } else {
