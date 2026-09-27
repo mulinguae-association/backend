@@ -3,12 +3,15 @@ import {
   createBlogPost,
   deleteBlogPost,
   getAcceptedBlogPosts,
+  getBlogPostForEdit,
   searchBlogPosts,
+  updateBlogPost,
 } from "../controllers/blogPostController.js";
 import authenticateUser from "../middleware/authMiddlewar.js";
 import {
   createSubmissionRateLimiter,
   interactionRateLimiter,
+  blogEditRateLimiter,
   deleteRateLimiter,
 } from "../middleware/rateLimitMiddleware.js";
 import updateInteraction from "../controllers/ineractionsController.js";
@@ -27,11 +30,17 @@ const blogRateLimiter = createSubmissionRateLimiter({
 router.post("/", authenticateUser, blogRateLimiter, createBlogPost);
 router.get("/accepted", getAcceptedBlogPosts);
 
+// api route for search a blog post
+router.get("/search", searchBlogPosts);
+
+// Reading one post for the edit form, and editing it. Authored by the post's own
+// author or an admin, checked in the controller. Declared after the two static
+// GET paths above so "/accepted" and "/search" are never read as an id.
+router.get("/:id", authenticateUser, getBlogPostForEdit);
+router.put("/:id", authenticateUser, blogEditRateLimiter, updateBlogPost);
+
 // API route for deleting a blog post
 router.delete("/:id", authenticateUser, deleteRateLimiter, deleteBlogPost);
-
-// api route for search a blog post 
-router.get("/search", searchBlogPosts);
 
 // Reactions on a blog post. Shares the comment interaction bucket on purpose:
 // it is the same limiter instance, so a user cannot get 120/hour here on top of

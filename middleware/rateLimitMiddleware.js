@@ -177,6 +177,19 @@ export const commentEditRateLimiter = createSubmissionRateLimiter({
     "You are editing comments too quickly. Please wait before trying again.",
 });
 
+// An edit is screened exactly like a new post, so it costs the same two
+// moderation calls and gets its own bucket: sharing the "blog" one would let an
+// author spend the daily publishing allowance on revisions.
+export const blogEditRateLimiter = createSubmissionRateLimiter({
+  keyPrefix: "blog-edit",
+  windows: [
+    { limit: 10, windowSeconds: 3600 },
+    { limit: 30, windowSeconds: 86400 },
+  ],
+  errorMessage:
+    "You are editing blog posts too quickly. Please wait before trying again.",
+});
+
 export const deleteRateLimiter = createSubmissionRateLimiter({
   keyPrefix: "delete",
   windows: [
@@ -192,5 +205,6 @@ export default {
   createSubmissionRateLimiter,
   interactionRateLimiter,
   commentEditRateLimiter,
+  blogEditRateLimiter,
   deleteRateLimiter,
 };

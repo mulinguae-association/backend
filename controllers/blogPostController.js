@@ -39,6 +39,95 @@ const invalidCategoryProblem = (req, res) =>
     detail: "That category does not exist.",
   });
 
+/**
+ * Load a post the caller is allowed to edit. Responds and returns null when the
+ * post does not exist or the caller may not touch it, so both the read and the
+ * write path answer identically.
+ */
+const loadEditablePost = async (req, res) => {
+  const blogPost = await BlogPost.findById(req.params.id);
+  if (!blogPost) {
+    problem(res, {
+      req,
+      status: 404,
+      code: "BLOG_NOT_FOUND",
+      title: "Blog post not found",
+    });
+    return null;
+  }
+
+  // The author lives on `postedBy`; the schema has no `authorId`. Both sides are
+  // stringified because one is an ObjectId and the other may be a string.
+  if (
+    String(blogPost.postedBy) !== String(req.userId) &&
+    !isAdminRole(req.role)
+  ) {
+    problem(res, {
+      req,
+      status: 403,
+      code: "BLOG_NOT_EDITABLE",
+      title: "No permission to edit blog post",
+    });
+    return null;
+  }
+
+  return blogPost;
+};
+
+/** The shape the feed serves, so an edited card keeps its author fields. */
+const populateAuthor = { path: "postedBy", model: "User", select: "_id name profileImage role" };
+
+/**
+ * Screen a blog before it is persisted. Returns true when it may be saved, and
+ * sends the response and returns false when it may not. Shared by creation and
+ * editing so both refuse the same content under the same problem codes.
+ */
+async function screenBlogPost(req, res, { title, subTitle, content }) {
+  try {
+    const verdict = await moderateBlogPost({ title, subTitle, content });
+
+    if (!verdict.allowed) {
+      console.log("[moderation] rejected blog-safety");
+      problem(res, {
+        req,
+        status: REJECTED_STATUS,
+        code: "BLOG_CONTENT_REJECTED",
+        title: "Content rejected",
+        detail: "Your blog could not be saved.",
+      });
+      return false;
+    }
+
+    if (!verdict.relevant) {
+      console.log("[moderation] rejected blog-relevance");
+      problem(res, {
+        req,
+        status: REJECTED_STATUS,
+        code: "BLOG_OUT_OF_SCOPE",
+        title: "Out of scope",
+        detail:
+          "Your blog could not be saved because it does not match the site's content guidelines.",
+      });
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    // Fail closed: an unreachable moderator must never let content through.
+    if (error instanceof ModerationUnavailableError) {
+      problem(res, {
+        req,
+        status: UNAVAILABLE_STATUS,
+        code: "MODERATION_UNAVAILABLE",
+        title: "Moderation unavailable",
+        detail: "Your blog could not be saved. Please try again later.",
+      });
+      return false;
+    }
+    throw error;
+  }
+}
+
 export async function createBlogPost(req, res) {
   try {
     const { title, subTitle, content, category } = req.body;
@@ -53,42 +142,8 @@ export async function createBlogPost(req, res) {
     const author = await User.findById(authorId)
 
     // Nothing is persisted unless both checks pass; an outage rejects too.
-    try {
-      const verdict = await moderateBlogPost({ title, subTitle, content });
-
-      if (!verdict.allowed) {
-        console.log("[moderation] rejected blog-safety");
-        return problem(res, {
-          req,
-          status: REJECTED_STATUS,
-          code: "CONTENT_REJECTED",
-          title: "Content rejected",
-          detail: "Your blog could not be published.",
-        });
-      }
-
-      if (!verdict.relevant) {
-        console.log("[moderation] rejected blog-relevance");
-        return problem(res, {
-          req,
-          status: REJECTED_STATUS,
-          code: "SCOPE_REJECTED",
-          title: "Out of scope",
-          detail:
-            "Your blog could not be published because it does not match the site's content guidelines.",
-        });
-      }
-    } catch (error) {
-      if (error instanceof ModerationUnavailableError) {
-        return problem(res, {
-          req,
-          status: UNAVAILABLE_STATUS,
-          code: "MODERATION_UNAVAILABLE",
-          title: "Moderation unavailable",
-          detail: "Your blog could not be published. Please try again later.",
-        });
-      }
-      throw error;
+    if (!(await screenBlogPost(req, res, { title, subTitle, content }))) {
+      return;
     }
 
     const blogPost = new BlogPost({ title, subTitle, content, postedBy: author, category: resolvedCategory, status: "accepted" });
@@ -149,6 +204,81 @@ export async function deleteBlogPost(req, res) {
   }
 }
 
+/**
+ * Read one post for the edit form. Restricted to the author and admins, so the
+ * feed's paginated list does not have to already hold the post being edited.
+ */
+export async function getBlogPostForEdit(req, res) {
+  try {
+    const blogPost = await loadEditablePost(req, res);
+    if (!blogPost) return;
+
+    await blogPost.populate(populateAuthor);
+    return res.json({ blogPost });
+  } catch (error) {
+    console.error("Error retrieving blog post:", error);
+    return problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
+  }
+}
+
+export async function updateBlogPost(req, res) {
+  try {
+    const blogPost = await loadEditablePost(req, res);
+    if (!blogPost) return;
+
+    const { title, subTitle, content, category } = req.body;
+
+    // An absent category leaves the stored one alone, so an edit that only
+    // rewrites the prose does not silently move the post to another topic.
+    let resolvedCategory;
+    if (category !== undefined) {
+      resolvedCategory = resolveCategory(category);
+      if (!resolvedCategory) {
+        return invalidCategoryProblem(req, res);
+      }
+    }
+
+    // Moderation judges the post as it will read after the edit, not the fields
+    // that happened to be sent: a title-only request still has to be screened
+    // against the content it keeps.
+    const next = {
+      title: title !== undefined ? title : blogPost.title,
+      subTitle: subTitle !== undefined ? subTitle : blogPost.subTitle,
+      content: content !== undefined ? content : blogPost.content,
+    };
+
+    // Screened after the ownership check, so an unauthorised edit costs no
+    // moderation call, and the edit is all-or-nothing like creation.
+    if (!(await screenBlogPost(req, res, next))) {
+      return;
+    }
+
+    Object.assign(blogPost, next);
+    if (resolvedCategory !== undefined) blogPost.category = resolvedCategory;
+
+    await blogPost.save();
+    await blogPost.populate(populateAuthor);
+
+    return res.json({
+      message: "Blog post updated successfully",
+      blogPost: blogPost.toObject(),
+    });
+  } catch (error) {
+    console.error("Error updating blog post:", error);
+    return problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
+  }
+}
+
 export async function getAcceptedBlogPosts(req, res) {
   try {
     const limit = parseInt(req.query.limit) || 5;
@@ -178,11 +308,7 @@ export async function getAcceptedBlogPosts(req, res) {
     const posts = await BlogPost.find(filter)
       .sort({ createdAt: -1, _id: -1 })
       .limit(limit + 1)
-      .populate({
-        path: "postedBy",
-        model: "User",
-        select: "_id name profileImage role"
-      })
+      .populate(populateAuthor)
       .exec();
 
     const hasMore = posts.length > limit;
@@ -232,11 +358,7 @@ export async function searchBlogPosts(req, res) {
 
     const searchResults = await BlogPost.find(filter)
       .sort({ createdAt: -1 })
-      .populate({
-        path: "postedBy",
-        model: "User",
-        select: "_id name profileImage role"
-      })
+      .populate(populateAuthor)
 
     res.status(200).json(searchResults);
   } catch (error) {
