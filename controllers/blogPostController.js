@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import BlogPost, {
   BLOG_CATEGORIES,
   DEFAULT_BLOG_CATEGORY,
@@ -270,6 +271,42 @@ export async function updateBlogPost(req, res) {
     });
   } catch (error) {
     console.error("Error updating blog post:", error);
+    return problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
+  }
+}
+
+/**
+ * Read one accepted post by id, for a shared link. The author-only GET /:id
+ * cannot serve that: whoever follows a share is not signed in, and a malformed
+ * id is answered with 404 rather than allowed to throw.
+ */
+export async function getPublicBlogPost(req, res) {
+  try {
+    const { id } = req.params;
+    const blogPost = mongoose.isValidObjectId(id)
+      ? await BlogPost.findById(id)
+      : null;
+
+    // 404 for anything not published, so a post that is not accepted is never
+    // confirmed to exist.
+    if (!blogPost || blogPost.status !== "accepted") {
+      return problem(res, {
+        req,
+        status: 404,
+        code: "BLOG_NOT_FOUND",
+        title: "Blog post not found",
+      });
+    }
+
+    await blogPost.populate(populateAuthor);
+    return res.json({ blogPost });
+  } catch (error) {
+    console.error("Error retrieving blog post:", error);
     return problem(res, {
       req,
       status: 500,

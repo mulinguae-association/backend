@@ -4,6 +4,7 @@ import {
   deleteBlogPost,
   getAcceptedBlogPosts,
   getBlogPostForEdit,
+  getPublicBlogPost,
   searchBlogPosts,
   updateBlogPost,
 } from "../controllers/blogPostController.js";
@@ -36,6 +37,9 @@ router.get("/search", searchBlogPosts);
 // Reading one post for the edit form, and editing it. Authored by the post's own
 // author or an admin, checked in the controller. Declared after the two static
 // GET paths above so "/accepted" and "/search" are never read as an id.
+// "/public/:id" is the open, shareable read and is two segments, so it cannot
+// collide with the one-segment "/:id" below.
+router.get("/public/:id", getPublicBlogPost);
 router.get("/:id", authenticateUser, getBlogPostForEdit);
 router.put("/:id", authenticateUser, blogEditRateLimiter, updateBlogPost);
 
