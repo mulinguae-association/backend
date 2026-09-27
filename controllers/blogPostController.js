@@ -346,6 +346,9 @@ export async function getAcceptedBlogPosts(req, res) {
       .sort({ createdAt: -1, _id: -1 })
       .limit(limit + 1)
       .populate(populateAuthor)
+      // Read-only feed: hydration would rebuild a document per post, including
+      // the `content` HTML the card only previews.
+      .lean()
       .exec();
 
     const hasMore = posts.length > limit;

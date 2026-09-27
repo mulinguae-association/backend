@@ -8,6 +8,7 @@
     "dev": "nodemon app.js",
     "reindex-knowledge": "node scripts/reindexKnowledge.js",
     "crawl-website": "node scripts/crawlWebsite.js",
+    "inspect-blog-index": "node scripts/inspectBlogFeedIndex.js",
     "postinstall": "node -e \"try{require('fs').rmSync('node_modules/@huggingface/transformers/node_modules/sharp',{recursive:true,force:true})}catch(e){}\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

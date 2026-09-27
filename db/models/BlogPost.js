@@ -36,6 +36,14 @@ const blogPostSchema = new Schema({
   lastReply: { type: Schema.Types.ObjectId, ref: "Comment", required: false },
 });
 
+// The feed is read as `status`, newest first, with createdAt/_id as the
+// tiebreak; the category view filters one field ahead of that same sort. Without
+// these, Mongo scans the collection and sorts in memory, dragging every post's
+// `content` over the wire to return a page of five. Built deliberately, not on
+// boot — see autoIndex in db/db.js.
+blogPostSchema.index({ status: 1, createdAt: -1, _id: -1 });
+blogPostSchema.index({ status: 1, category: 1, createdAt: -1, _id: -1 });
+
 const BlogPost = mongoose.model("BlogPost", blogPostSchema);
 
 export default BlogPost;

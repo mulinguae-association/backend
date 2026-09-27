@@ -25,6 +25,10 @@ async function connectToDatabase() {
     const opts = {
       bufferCommands: false, // CRITICAL: Stop the 10000ms buffering error
       serverSelectionTimeoutMS: 5000, // Fail faster so you know there's an issue
+      // Schema indexes are built deliberately, never on boot. With the default
+      // (true) every serverless cold start kicks off a build against the live
+      // cluster, which a build slower than the function timeout never reports.
+      autoIndex: false,
     };
 
     cached.promise = mongoose.connect(mongoUrl, opts).then((conn) => {
