@@ -197,30 +197,22 @@ async function getAcceptedComments(req, res) {
   }
 
   try {
-    // Pin the newest accepted parent comment and its newest reply onto page 1
-    // so the blog feed can always preview them without loading later pages.
-    const newestParent = await Comment.findOne({
-      blogId,
-      status: "accepted",
-      parentComment: null,
-    })
-      .sort({ createdAt: -1 })
-      .populate(populated)
-      .lean();
+      // Pin the newest accepted parent comment onto page 1 so the blog feed can
+      // always preview it without loading later pages. Its newest reply used to
+      // be pinned beside it, but the card reads acceptedComments[0] alone and the
+      // popup already lists that reply under its own parent, so pinning it here
+      // rendered the same reply twice.
+      const newestParent = await Comment.findOne({
+        blogId,
+        status: "accepted",
+        parentComment: null,
+      })
+        .sort({ createdAt: -1 })
+        .populate(populated)
+        .lean();
 
-    const newestReply = newestParent
-      ? await Comment.findOne({
-          blogId,
-          status: "accepted",
-          parentComment: newestParent._id,
-        })
-          .sort({ createdAt: -1 })
-          .populate(populated)
-          .lean()
-      : null;
-
-    const pinned = [newestParent, newestReply].filter(Boolean);
-    const pinnedIds = pinned.map((comment) => comment._id);
+      const pinned = [newestParent].filter(Boolean);
+      const pinnedIds = pinned.map((comment) => comment._id);
     // How many of the remaining comments page 1 consumes after the pinned ones
     const restPerPage = Math.max(0, limitNum - pinned.length);
     // Remaining comments consumed by the pages before this one
