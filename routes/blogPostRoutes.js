@@ -4,6 +4,7 @@ import {
   deleteBlogPost,
   getAcceptedBlogPosts,
   getBlogPostForEdit,
+  getMyBlogPosts,
   getPublicBlogPost,
   searchBlogPosts,
   updateBlogPost,
@@ -33,6 +34,10 @@ router.get("/accepted", getAcceptedBlogPosts);
 
 // api route for search a blog post
 router.get("/search", searchBlogPosts);
+
+// The signed-in author's own posts. Declared before "/:id" so "my" is never read
+// as an id.
+router.get("/my", authenticateUser, getMyBlogPosts);
 
 // Reading one post for the edit form, and editing it. Authored by the post's own
 // author or an admin, checked in the controller. Declared after the two static

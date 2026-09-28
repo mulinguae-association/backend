@@ -364,8 +364,49 @@ export async function getAcceptedBlogPosts(req, res) {
   }
 }
 
-export async function searchBlogPosts(req, res) {
-  const searchQuery = typeof req.query.q === "string" ? req.query.q : "";
+/**
+ * The signed-in author's own posts, in the same shape as the public feed so the
+ * client can reuse the same list. `status` is not filtered: an author can see
+ * their rejected or pending post, otherwise it would vanish from their dashboard
+ * with no explanation.
+ */
+export async function getMyBlogPosts(req, res) {
+  try {
+    const limit = parseInt(req.query.limit) || 5;
+    const cursor = req.query.cursor;
+    const filter = { postedBy: req.userId };
+
+    if (cursor) {
+      const lastPost = await BlogPost.findById(cursor).select("createdAt _id").lean();
+      if (lastPost) {
+        filter.$or = [
+          { createdAt: { $lt: lastPost.createdAt } },
+          { createdAt: lastPost.createdAt, _id: { $lt: lastPost._id } },
+        ];
+      }
+    }
+
+    const posts = await BlogPost.find(filter)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limit + 1)
+      .populate(populateAuthor)
+      .lean()
+      .exec();
+
+    const hasMore = posts.length > limit;
+    if (hasMore) posts.pop();
+
+    res.status(200).json({
+      posts,
+      nextCursor: hasMore ? posts[posts.length - 1]._id : null,
+    });
+  } catch (error) {
+    console.error("Error retrieving own blog posts:", error);
+    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
+  }
+}
+
+export async function searchBlogPosts(req, res) {  const searchQuery = typeof req.query.q === "string" ? req.query.q : "";
   try {
     // Case-insensitive, matched literally so a term like "c++" or "(" is not
     // read as a pattern.
