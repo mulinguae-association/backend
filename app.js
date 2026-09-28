@@ -30,13 +30,12 @@ connectToDatabase()
   .then(() => {
     console.log("Connected to MongoDB");
     createAdminUser()
-      .then(() => console.log("Predefined user created successfully"))
+      .then(() => console.log("Admin seed check complete"))
       .catch((error) => {
         console.error("Error creating predefined user:", error);
       });
   })
   .catch((error) => {
-    console.error("MongoDB connection error:", error);
     console.error("MongoDB connection error:", error);
   });
 

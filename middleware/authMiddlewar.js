@@ -24,12 +24,22 @@ const authenticateUser = async (req, res, next) => {
     if (!user) {
       throw new Error();
     }
+
+    if (user.status === "deactivated") {
+      return problem(res, {
+        req,
+        status: 403,
+        code: "ACCOUNT_DEACTIVATED",
+        title: "Account deactivated",
+        detail: "This account has been deactivated.",
+      });
+    }
     // Attach the user's details to the request object
     req.user = user;
     req.userId = user._id;
     req.userName = user.name;
     req.avatar = user.profileImage;
-    req.role = decoded.role || "user";
+    req.role = user.role || "user";
     // Continue to the next middleware or route handler
     next();
   } catch (err) {

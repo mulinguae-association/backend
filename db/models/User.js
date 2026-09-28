@@ -22,6 +22,14 @@ const userSchema = new mongoose.Schema({
     enum: ["admin", "superadmin", "user"],
     default: "user",
   },
+  // Soft delete, so a deactivated account keeps its posts and comments and can
+  // be brought back. A hard delete would orphan both.
+  status: {
+    type: String,
+    enum: ["active", "deactivated"],
+    default: "active",
+  },
+  deactivatedAt: { type: Date, default: null },
   tokenVersion: { type: Number, default: 0 },
 });
 // Hash the password before saving

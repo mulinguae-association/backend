@@ -43,6 +43,9 @@ const blogPostSchema = new Schema({
 // boot — see autoIndex in db/db.js.
 blogPostSchema.index({ status: 1, createdAt: -1, _id: -1 });
 blogPostSchema.index({ status: 1, category: 1, createdAt: -1, _id: -1 });
+// The dashboard's "my posts" list sorts by an owner, newest first. Without this
+// Mongo would scan every post and sort in memory to serve a page of five.
+blogPostSchema.index({ postedBy: 1, createdAt: -1, _id: -1 });
 
 const BlogPost = mongoose.model("BlogPost", blogPostSchema);
 

@@ -376,14 +376,47 @@ export async function getMyBlogPosts(req, res) {
     const cursor = req.query.cursor;
     const filter = { postedBy: req.userId };
 
+    // The same narrowing the public feed does, so the dashboard's category
+    // chips and its search act on the list rather than only refetching it.
+    if (req.query.category) {
+      const category = resolveCategory(req.query.category);
+      if (!category) {
+        return invalidCategoryProblem(req, res);
+      }
+      filter.category = categoryCondition(category);
+    }
+
+    const searchQuery = typeof req.query.q === "string" ? req.query.q.trim() : "";
+
+    // Search and cursor each build an `$or`; one must not overwrite the other,
+    // so both go under `$and`. Otherwise a search on page two silently widened
+    // back to "all my posts" and the pagination boundary filters out the term.
+    const and = [];
+    if (searchQuery) {
+      // Scoped by postedBy above, so this can only ever match the caller's own
+      // posts however the term is phrased.
+      and.push({
+        $or: [
+          { title: { $regex: new RegExp(escapeRegex(searchQuery), "i") } },
+          { subTitle: { $regex: new RegExp(escapeRegex(searchQuery), "i") } },
+        ],
+      });
+    }
+
     if (cursor) {
       const lastPost = await BlogPost.findById(cursor).select("createdAt _id").lean();
       if (lastPost) {
-        filter.$or = [
-          { createdAt: { $lt: lastPost.createdAt } },
-          { createdAt: lastPost.createdAt, _id: { $lt: lastPost._id } },
-        ];
+        and.push({
+          $or: [
+            { createdAt: { $lt: lastPost.createdAt } },
+            { createdAt: lastPost.createdAt, _id: { $lt: lastPost._id } },
+          ],
+        });
       }
+    }
+
+    if (and.length) {
+      filter.$and = and;
     }
 
     const posts = await BlogPost.find(filter)

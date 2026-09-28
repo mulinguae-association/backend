@@ -1,40 +1,39 @@
-import bcrypt from "bcrypt";
 import User from "../db/models/User.js";
 
+// The seed account comes from the environment, not from source. A hardcoded
+// email and password in the repo is a production backdoor for anyone who can
+// read it — and this file used to re-set that account's password on every boot,
+// so even a password the owner changed was silently replaced.
 async function createAdminUser() {
-  try {
-    const existingUser = await User.findOne({
-      email: "goparlen1157@gmail.com",
-    });
-
-    if (existingUser) {
-      // Predefined user already exists, update the password if needed
-      const newPassword = "5555";
-      const passwordMatch = await bcrypt.compare(
-        newPassword,
-        existingUser.password
-      );
-
-      if (!passwordMatch) {
-        existingUser.password = "5555";
-        await existingUser.save();
-      }
-    } else {
-      // Predefined user doesn't exist, create a new one
-      const predefinedUser = new User({
-        name: "Goparl",
-        email: "goparlen1157@gmail.com",
-        password: "5555",
-        role: "admin",
-      });
-      await predefinedUser.save();
-    }
-
-    console.log("Predefined user created successfully");
-  } catch (error) {
-    throw new Error("Error creating predefined user");
+  const email = process.env.ADMIN_EMAIL;
+  const password = process.env.ADMIN_PASSWORD;
+  if (!email || !password) {
+    console.log("No ADMIN_EMAIL / ADMIN_PASSWORD set - skipping the predefined admin");
+    return;
   }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const existingUser = await User.findOne({ email: normalizedEmail });
+
+  // Never reset a live account's password or role on boot: a stale hardcoded
+  // value would overwrite whatever the owner set. The seed only fills a gap.
+  if (existingUser) {
+    console.log(`Predefined admin exists (${normalizedEmail}) - left untouched`);
+    return;
+  }
+
+  const role = process.env.ADMIN_ROLE || "admin";
+  if (!["admin", "superadmin", "user"].includes(role)) {
+    throw new Error("ADMIN_ROLE must be one of admin, superadmin, user");
+  }
+
+  await User.create({
+    name: process.env.ADMIN_NAME || "Predefined admin",
+    email: normalizedEmail,
+    password,
+    role,
+  });
+  console.log(`Predefined ${role} created (${normalizedEmail})`);
 }
 
-// Call the function to create the admin user
 export default createAdminUser;
