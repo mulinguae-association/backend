@@ -4,8 +4,13 @@ import BlogPost from "../db/models/BlogPost.js";
 import Comment from "../db/models/Comment.js";
 import User from "../db/models/User.js";
 import { isAdminRole } from "../utils/isAdminRole.js";
-import { moderateSafety, ModerationUnavailableError } from "../services/moderationService.js";
+import {
+  moderateSafety,
+  ModerationUnavailableError,
+} from "../services/moderationService.js";
 import problem from "../utils/problem.js";
+import { broadcastToRoom } from "../websocket/publisher.js";
+import { blogRoomTopic } from "../websocket/roomManager.js";
 
 const REJECTED_STATUS = 422;
 const UNAVAILABLE_STATUS = 503;
@@ -35,13 +40,23 @@ async function screenContent(res, { content, type }) {
         status: UNAVAILABLE_STATUS,
         code: "MODERATION_UNAVAILABLE",
         title: "Moderation unavailable",
-        detail:
-          "Your comment could not be published. Please try again later.",
+        detail: "Your comment could not be published. Please try again later.",
       });
       return false;
     }
     throw error;
   }
+}
+
+// The read API populates postedBy with only these fields; the event and
+// response payloads must ship the same shape, never the raw User document.
+function safeUserSummary(user) {
+  return {
+    _id: user._id,
+    name: user.name,
+    profileImage: user.profileImage,
+    role: user.role,
+  };
 }
 
 // Define your functions
@@ -57,7 +72,12 @@ async function createComment(req, res) {
     const blogPost = await BlogPost.findById(id);
 
     if (!blogPost) {
-      return problem(res, { req, status: 404, code: "BLOG_NOT_FOUND", title: "Blog post not found" });
+      return problem(res, {
+        req,
+        status: 404,
+        code: "BLOG_NOT_FOUND",
+        title: "Blog post not found",
+      });
     }
 
     if (!(await screenContent(res, { content, type: "comment-safety" }))) {
@@ -67,7 +87,7 @@ async function createComment(req, res) {
     const comment = new Comment({
       content,
       blogId: id,
-      postedBy: author,
+      postedBy: authorId,
       parentComment: null,
       status: "accepted",
     });
@@ -76,11 +96,33 @@ async function createComment(req, res) {
 
     // Increment parent comment count on BlogPost atomically
     await BlogPost.findByIdAndUpdate(id, { $inc: { commentsCount: 1 } });
+    // A plain object, not the document: assigning the summary onto `comment`
+    // would be cast back to a bare id by the ObjectId path setter.
+    const payload = {
+      ...comment.toObject(),
+      postedBy: safeUserSummary(author),
+    };
+    // Fan out to everyone currently interested in the blog; delivery is driven
+    // by room subscription, not by post ownership.
+    const room = blogRoomTopic(id);
+    if (room) {
+      broadcastToRoom(room, "comment.created", {
+        blogId: room.slice("blog:".length),
+        comment: payload,
+      });
+    }
 
-    res.status(201).json({ message: "Comment added successfully", comment });
+    res
+      .status(201)
+      .json({ message: "Comment added successfully", comment: payload });
   } catch (error) {
     console.error("Error adding comment:", error);
-    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
+    problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
   }
 }
 async function updatedComment(req, res) {
@@ -90,13 +132,23 @@ async function updatedComment(req, res) {
     // Find the blog post with the provided ID
     const comment = await Comment.findById(id);
     if (!comment) {
-      return problem(res, { req, status: 404, code: "COMMENT_NOT_FOUND", title: "Comment not found" });
+      return problem(res, {
+        req,
+        status: 404,
+        code: "COMMENT_NOT_FOUND",
+        title: "Comment not found",
+      });
     }
     if (
       comment.postedBy._id.toString() !== req.userId.toString() &&
       !isAdminRole(req.role)
     ) {
-      return problem(res, { req, status: 403, code: "COMMENT_NOT_EDITABLE", title: "No permission to edit comment" });
+      return problem(res, {
+        req,
+        status: 403,
+        code: "COMMENT_NOT_EDITABLE",
+        title: "No permission to edit comment",
+      });
     }
 
     // Screened after the ownership check so an unauthorised edit costs no
@@ -114,7 +166,12 @@ async function updatedComment(req, res) {
     res.status(201).json({ message: "Comment updated successfully" });
   } catch (error) {
     console.error("Error updating comment:", error);
-    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
+    problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
   }
 }
 // Create a reply comment referenced by the parent via the flat parentComment field
@@ -126,7 +183,12 @@ async function createReplyComment(req, res) {
     // find author info
     const author = await User.findById(authorId);
     if (!parentComment) {
-      return problem(res, { req, status: 404, code: "COMMENT_NOT_FOUND", title: "Parent comment not found" });
+      return problem(res, {
+        req,
+        status: 404,
+        code: "COMMENT_NOT_FOUND",
+        title: "Parent comment not found",
+      });
     }
 
     if (!(await screenContent(res, { content, type: "reply-safety" }))) {
@@ -136,7 +198,7 @@ async function createReplyComment(req, res) {
     const replyComment = new Comment({
       content,
       blogId,
-      postedBy: author,
+      postedBy: authorId,
       parentComment: parentCommentId,
       status: "accepted",
     });
@@ -147,13 +209,31 @@ async function createReplyComment(req, res) {
     await BlogPost.findByIdAndUpdate(blogId, {
       $set: { lastReply: replyComment._id },
     });
+    // A plain object, not the document: assigning the summary onto the document
+    // path would be cast back to a bare id by the ObjectId path setter.
+    const replyPayload = {
+      ...replyComment.toObject(),
+      postedBy: safeUserSummary(author),
+    };
+    const room = blogRoomTopic(blogId);
+    if (room) {
+      broadcastToRoom(room, "comment.created", {
+        blogId: room.slice("blog:".length),
+        comment: replyPayload,
+      });
+    }
 
     return res
       .status(201)
-      .json({ message: "Reply added successfully", comment: replyComment });
+      .json({ message: "Reply added successfully", comment: replyPayload });
   } catch (error) {
     console.error("Error adding reply comment:", error);
-    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
+    problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
   }
 }
 
@@ -197,22 +277,22 @@ async function getAcceptedComments(req, res) {
   }
 
   try {
-      // Pin the newest accepted parent comment onto page 1 so the blog feed can
-      // always preview it without loading later pages. Its newest reply used to
-      // be pinned beside it, but the card reads acceptedComments[0] alone and the
-      // popup already lists that reply under its own parent, so pinning it here
-      // rendered the same reply twice.
-      const newestParent = await Comment.findOne({
-        blogId,
-        status: "accepted",
-        parentComment: null,
-      })
-        .sort({ createdAt: -1 })
-        .populate(populated)
-        .lean();
+    // Pin the newest accepted parent comment onto page 1 so the blog feed can
+    // always preview it without loading later pages. Its newest reply used to
+    // be pinned beside it, but the card reads acceptedComments[0] alone and the
+    // popup already lists that reply under its own parent, so pinning it here
+    // rendered the same reply twice.
+    const newestParent = await Comment.findOne({
+      blogId,
+      status: "accepted",
+      parentComment: null,
+    })
+      .sort({ createdAt: -1 })
+      .populate(populated)
+      .lean();
 
-      const pinned = [newestParent].filter(Boolean);
-      const pinnedIds = pinned.map((comment) => comment._id);
+    const pinned = [newestParent].filter(Boolean);
+    const pinnedIds = pinned.map((comment) => comment._id);
     // How many of the remaining comments page 1 consumes after the pinned ones
     const restPerPage = Math.max(0, limitNum - pinned.length);
     // Remaining comments consumed by the pages before this one
@@ -264,7 +344,12 @@ async function getAcceptedComments(req, res) {
       .json({ acceptedComments, totalComments: totalCommentCount });
   } catch (error) {
     console.error("Error retrieving accepted comments:", error);
-    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
+    problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
   }
 }
 
@@ -322,7 +407,12 @@ async function getCommentReplies(req, res) {
     res.status(200).json({ replies });
   } catch (error) {
     console.error("Error retrieving comment replies:", error);
-    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
+    problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
   }
 }
 
@@ -333,7 +423,12 @@ async function deleteComment(req, res) {
   try {
     const comment = await Comment.findById(commentId);
     if (!comment) {
-      return problem(res, { req, status: 404, code: "COMMENT_NOT_FOUND", title: "Comment not found" });
+      return problem(res, {
+        req,
+        status: 404,
+        code: "COMMENT_NOT_FOUND",
+        title: "Comment not found",
+      });
     }
 
     const isParentComment = comment.parentComment === null; // Check if this is a parent comment
@@ -357,7 +452,9 @@ async function deleteComment(req, res) {
             as: "descendants",
           },
         },
-        { $project: { ids: { $concatArrays: [["$_id"], "$descendants._id"] } } },
+        {
+          $project: { ids: { $concatArrays: [["$_id"], "$descendants._id"] } },
+        },
       ]);
       await Comment.deleteMany({
         _id: { $in: subtree[0]?.ids ?? [comment._id] },
@@ -372,12 +469,22 @@ async function deleteComment(req, res) {
 
       res.status(200).json({ message: "Comment deleted successfully" });
     } else {
-      problem(res, { req, status: 401, code: "UNAUTHORIZED", title: "Unauthorized action" });
+      problem(res, {
+        req,
+        status: 401,
+        code: "UNAUTHORIZED",
+        title: "Unauthorized action",
+      });
       console.log("Unauthorized action");
     }
   } catch (error) {
     console.error("Error deleting comment:", error);
-    problem(res, { req, status: 500, code: "INTERNAL_ERROR", title: "Internal server error" });
+    problem(res, {
+      req,
+      status: 500,
+      code: "INTERNAL_ERROR",
+      title: "Internal server error",
+    });
   }
 }
 
