@@ -301,21 +301,27 @@ async function getAcceptedComments(req, res) {
 
     // Only top-level comments paginate on the blog query; replies are fetched
     // lazily per parent via the "show replies" button.
-    const rest = await Comment.find(
-      pinnedIds.length > 0
-        ? {
-            blogId,
-            status: "accepted",
-            parentComment: null,
-            _id: { $nin: pinnedIds },
-          }
-        : { blogId, status: "accepted", parentComment: null },
-    )
-      .sort({ createdAt: -1 })
-      .skip(Math.max(0, restConsumed))
-      .limit(pageNum === 1 ? restPerPage : limitNum)
-      .populate(populated)
-      .lean();
+    // Skipped entirely when the page has no room: Mongoose reads limit(0) as
+    // "no limit", so the card preview (limit=1, which the pinned comment
+    // already fills) would otherwise load every accepted parent comment.
+    let rest = [];
+    if (pageNum === 1 ? restPerPage > 0 : limitNum > 0) {
+      rest = await Comment.find(
+        pinnedIds.length > 0
+          ? {
+              blogId,
+              status: "accepted",
+              parentComment: null,
+              _id: { $nin: pinnedIds },
+            }
+          : { blogId, status: "accepted", parentComment: null },
+      )
+        .sort({ createdAt: -1 })
+        .skip(Math.max(0, restConsumed))
+        .limit(pageNum === 1 ? restPerPage : limitNum)
+        .populate(populated)
+        .lean();
+    }
 
     const acceptedComments = pageNum === 1 ? pinned.concat(rest) : rest;
     await attachReplyCounts(acceptedComments);

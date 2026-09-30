@@ -21,6 +21,7 @@ const commentSchema = new mongoose.Schema({
 
 // Add indexes to speed up lookups and pagination
 commentSchema.index({ blogId: 1, parentComment: 1, status: 1, createdAt: -1 });
+commentSchema.index({ parentComment: 1, status: 1 });
 
 const Comment = mongoose.model("Comment", commentSchema);
 
