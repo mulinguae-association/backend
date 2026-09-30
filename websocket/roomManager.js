@@ -6,6 +6,13 @@ const rooms = new Map();
 const TOPIC_PREFIX = "blog:";
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 
+// Ceiling on how many blogs one socket may be in at once. A feed sends its full
+// loaded set, and a page of ids is ~30 bytes each, so this is orders of
+// magnitude above any real membership (a 100-post feed needs 100). It exists to
+// stop one frame from creating an unbounded number of rooms: before the cap, a
+// single client could open 5000 rooms and every later broadcast would walk them.
+const MAX_TOPICS_PER_SOCKET = 500;
+
 // Canonical room topic for a blog id. Both sides of the room handshake (the
 // client subscription and the server broadcast) must key the room identically,
 // so broadcasts go through this same parser rather than the raw body string.
@@ -33,10 +40,19 @@ function removeFromRoom(ws, topic) {
 }
 
 // Reconcile a socket's room membership to the requested topic set. The client
-// sends its full desired set, so this is idempotent and race-free.
+// sends its full desired set, so this is idempotent and race-free. The set is
+// capped (see MAX_TOPICS_PER_SOCKET): an oversized frame is truncated rather
+// than refused, so a client that legitimately grows past the cap still keeps its
+// existing membership and the first MAX_TOPICS_PER_SOCKET blogs stay live.
+// Returns the number of requested topics that were dropped, for the caller's log.
 export function joinRooms(ws, topics) {
   const next = new Set();
+  let dropped = 0;
   for (const topic of topics) {
+    if (next.size >= MAX_TOPICS_PER_SOCKET) {
+      dropped += 1;
+      continue;
+    }
     const parsed = parseTopic(topic);
     if (parsed) next.add(parsed);
   }
@@ -48,6 +64,7 @@ export function joinRooms(ws, topics) {
     if (!current.has(topic)) addToRoom(ws, topic);
   }
   ws.topics = next;
+  return dropped;
 }
 
 // Drop a socket from every room it belongs to (used on disconnect).
