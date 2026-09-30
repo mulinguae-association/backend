@@ -9,8 +9,12 @@ import {
   ModerationUnavailableError,
 } from "../services/moderationService.js";
 import problem from "../utils/problem.js";
-import { broadcastToRoom } from "../websocket/publisher.js";
-import { blogRoomTopic } from "../websocket/roomManager.js";
+import {
+  toCommentPayload,
+  commentCreated,
+  commentUpdated,
+  commentDeleted,
+} from "../websocket/commentEvents.js";
 
 const REJECTED_STATUS = 422;
 const UNAVAILABLE_STATUS = 503;
@@ -46,17 +50,6 @@ async function screenContent(res, { content, type }) {
     }
     throw error;
   }
-}
-
-// The read API populates postedBy with only these fields; the event and
-// response payloads must ship the same shape, never the raw User document.
-function safeUserSummary(user) {
-  return {
-    _id: user._id,
-    name: user.name,
-    profileImage: user.profileImage,
-    role: user.role,
-  };
 }
 
 // Define your functions
@@ -96,21 +89,10 @@ async function createComment(req, res) {
 
     // Increment parent comment count on BlogPost atomically
     await BlogPost.findByIdAndUpdate(id, { $inc: { commentsCount: 1 } });
-    // A plain object, not the document: assigning the summary onto `comment`
-    // would be cast back to a bare id by the ObjectId path setter.
-    const payload = {
-      ...comment.toObject(),
-      postedBy: safeUserSummary(author),
-    };
+    const payload = toCommentPayload(comment, author);
     // Fan out to everyone currently interested in the blog; delivery is driven
     // by room subscription, not by post ownership.
-    const room = blogRoomTopic(id);
-    if (room) {
-      broadcastToRoom(room, "comment.created", {
-        blogId: room.slice("blog:".length),
-        comment: payload,
-      });
-    }
+    commentCreated(id, payload);
 
     res
       .status(201)
@@ -163,7 +145,21 @@ async function updatedComment(req, res) {
     // Save the updated comment
     await comment.save();
 
-    res.status(201).json({ message: "Comment updated successfully" });
+    // The author is re-read rather than reused: an edit never populates
+    // postedBy, so the document only carries the raw id. Shipping the id would
+    // make a client overwrite a good cached author summary with a bare string.
+    const author = await User.findById(comment.postedBy);
+    const payload = toCommentPayload(comment, author);
+
+    // The room comes from the stored blogId, not the request: the update route
+    // has no blogId segment, and a caller could not be trusted to supply one.
+    commentUpdated(comment.blogId, payload);
+
+    // The comment is returned as well as broadcast so the editor that made the
+    // change does not depend on receiving its own event to settle.
+    res
+      .status(201)
+      .json({ message: "Comment updated successfully", comment: payload });
   } catch (error) {
     console.error("Error updating comment:", error);
     problem(res, {
@@ -211,17 +207,8 @@ async function createReplyComment(req, res) {
     });
     // A plain object, not the document: assigning the summary onto the document
     // path would be cast back to a bare id by the ObjectId path setter.
-    const replyPayload = {
-      ...replyComment.toObject(),
-      postedBy: safeUserSummary(author),
-    };
-    const room = blogRoomTopic(blogId);
-    if (room) {
-      broadcastToRoom(room, "comment.created", {
-        blogId: room.slice("blog:".length),
-        comment: replyPayload,
-      });
-    }
+    const replyPayload = toCommentPayload(replyComment, author);
+    commentCreated(blogId, replyPayload);
 
     return res
       .status(201)
@@ -447,6 +434,9 @@ async function deleteComment(req, res) {
       // $graphLookup. Walking it level by level cost two round trips per level,
       // which is what made a 2-level delete take ~3.4s. The root is part of the
       // result, so this also removes the comment being deleted.
+      //
+      // An aggregation already yields plain objects; .lean() is a Query method
+      // and does not exist on the Aggregate builder.
       const subtree = await Comment.aggregate([
         { $match: { _id: comment._id } },
         {
@@ -459,21 +449,63 @@ async function deleteComment(req, res) {
           },
         },
         {
-          $project: { ids: { $concatArrays: [["$_id"], "$descendants._id"] } },
+          $project: {
+            ids: { $concatArrays: [["$_id"], "$descendants._id"] },
+            rows: {
+              $concatArrays: [
+                [{ _id: "$_id", parentComment: "$parentComment" }],
+                "$descendants",
+              ],
+            },
+          },
         },
       ]);
-      await Comment.deleteMany({
-        _id: { $in: subtree[0]?.ids ?? [comment._id] },
+
+      const removedIds = (subtree[0]?.ids ?? [comment._id]).map((id) =>
+        String(id),
+      );
+      const removedSet = new Set(removedIds);
+      // A removed row only costs a surviving parent its repliesCount when that
+      // parent is not itself going away.
+      const removedParents = (subtree[0]?.rows ?? [])
+        .filter(
+          (row) =>
+            row?.parentComment &&
+            !removedSet.has(String(row.parentComment)),
+        )
+        .map((row) => ({
+          id: String(row._id),
+          parentCommentId: String(row.parentComment),
+        }));
+
+      await Comment.deleteMany({ _id: { $in: removedIds } });
+
+      const deletedAt = new Date();
+      // Published before the response so a subscriber is never behind the
+      // caller that triggered the delete.
+      commentDeleted(comment.blogId, {
+        commentId: comment._id,
+        removedIds,
+        removedParents,
+        removedAt: deletedAt,
       });
 
       if (isParentComment) {
-        // Decrement blog post parent comment count
-        await BlogPost.findByIdAndUpdate(req.params.blogId, {
+        // Decrement blog post parent comment count. Uses the blog the comment
+        // actually belonged to rather than the caller's route segment, so the
+        // count and the event can never disagree about which blog changed.
+        await BlogPost.findByIdAndUpdate(comment.blogId, {
           $inc: { commentsCount: -1 },
         });
       }
 
-      res.status(200).json({ message: "Comment deleted successfully" });
+      // The authoritative removed set is returned too, so the tab that issued
+      // the delete can prune exactly what the server pruned.
+      res.status(200).json({
+        message: "Comment deleted successfully",
+        removedIds,
+        removedAt: deletedAt,
+      });
     } else {
       problem(res, {
         req,
