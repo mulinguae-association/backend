@@ -51,6 +51,14 @@ async function updateInteraction(req, res) {
       return res.status(400).json({ error: "Invalid action" });
     }
 
+    // A tombstone has cleared its reactions, so a like landing on one would put
+    // the user back in a bucket that no longer exists and resurrect state that
+    // was deliberately discarded. The UI hides the controls entirely, so this
+    // only has to stop a crafted or stale request. BlogPost has no tombstone
+    // concept, so the guard is scoped to comments.
+    const filter =
+      modelType === "comment" ? { _id: id, status: { $ne: "deleted" } } : { _id: id };
+
     const others = ["likes", "unlikes", "loves"].filter(
       (type) => type !== interactionType,
     );
@@ -62,7 +70,7 @@ async function updateInteraction(req, res) {
     // and clears the buckets it no longer needs. It leaves __v alone, so no
     // VersionError under concurrency either.
     const doc = await model.findOneAndUpdate(
-      { _id: id },
+      filter,
       [
         {
           $set: {

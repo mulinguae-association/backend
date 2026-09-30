@@ -14,10 +14,21 @@ import {
   commentCreated,
   commentUpdated,
   commentDeleted,
-} from "../websocket/commentEvents.js";
+} from "../websocket/comments/events.js";
+import {
+  DELETION_MODE,
+  LISTABLE_COMMENT_STATUSES,
+  DELETED_COMMENT_STATUS,
+  buildTombstoneUpdate,
+  buildDeletionEvent,
+  resolveDeletionMode,
+  resolveDeletionActor,
+  LIVE_COMMENT_STATUS,
+} from "../services/comments/deletionPolicy.js";
 
 const REJECTED_STATUS = 422;
 const UNAVAILABLE_STATUS = 503;
+const CONFLICT_STATUS = 409;
 
 /**
  * Screen content before it is persisted. Returns true when the content may be
@@ -121,6 +132,16 @@ async function updatedComment(req, res) {
         title: "Comment not found",
       });
     }
+    if (comment.status === DELETED_COMMENT_STATUS) {
+      return problem(res, {
+        req,
+        status: CONFLICT_STATUS,
+        code: "COMMENT_DELETED",
+        title: "Comment was deleted",
+        detail: "A deleted comment cannot be edited.",
+      });
+    }
+
     if (
       comment.postedBy._id.toString() !== req.userId.toString() &&
       !isAdminRole(req.role)
@@ -139,8 +160,12 @@ async function updatedComment(req, res) {
       return;
     }
 
-    // Update the comment content
+    // Update the comment content. The lifecycle status is deliberately left
+    // alone: an edit is not a lifecycle transition, and updatedAt is what
+    // records that it happened. Clients order comment.updated payloads by it
+    // and mark the comment as edited from it.
     comment.content = content;
+    comment.updatedAt = new Date();
 
     // Save the updated comment
     await comment.save();
@@ -170,7 +195,10 @@ async function updatedComment(req, res) {
     });
   }
 }
-// Create a reply comment referenced by the parent via the flat parentComment field
+
+// Create a reply comment referenced by the parent via the flat parentComment
+// field. A tombstone is a valid parent: its row is still there, which is what
+// keeps a reply under a deleted comment rendering in the right place.
 async function createReplyComment(req, res) {
   const { content, blogId, parentCommentId } = req.body;
   const authorId = req.userId;
@@ -237,7 +265,9 @@ async function getAcceptedComments(req, res) {
   };
 
   // Attach the accepted reply count to every comment so parents can show how
-  // many replies they have without loading them.
+  // many replies they have without loading them. Tombstones are counted here:
+  // they are still listed under their parent, so a badge that ignored them
+  // would disagree with the rows directly beneath it.
   async function attachReplyCounts(comments) {
     const ids = comments.map((comment) => comment._id).filter(Boolean);
     const rows = ids.length
@@ -245,7 +275,7 @@ async function getAcceptedComments(req, res) {
           {
             $match: {
               parentComment: { $in: ids },
-              status: "accepted",
+              status: { $in: LISTABLE_COMMENT_STATUSES },
             },
           },
           {
@@ -269,9 +299,13 @@ async function getAcceptedComments(req, res) {
     // be pinned beside it, but the card reads acceptedComments[0] alone and the
     // popup already lists that reply under its own parent, so pinning it here
     // rendered the same reply twice.
+    //
+    // The preview stays live-only. It is a teaser, and a card whose preview is a
+    // bare "This comment was deleted." is worse than one showing the next
+    // comment that still has something to say.
     const newestParent = await Comment.findOne({
       blogId,
-      status: "accepted",
+      status: LIVE_COMMENT_STATUS,
       parentComment: null,
     })
       .sort({ createdAt: -1 })
@@ -297,11 +331,15 @@ async function getAcceptedComments(req, res) {
         pinnedIds.length > 0
           ? {
               blogId,
-              status: "accepted",
+              status: { $in: LISTABLE_COMMENT_STATUSES },
               parentComment: null,
               _id: { $nin: pinnedIds },
             }
-          : { blogId, status: "accepted", parentComment: null },
+          : {
+              blogId,
+              status: { $in: LISTABLE_COMMENT_STATUSES },
+              parentComment: null,
+            },
       )
         .sort({ createdAt: -1 })
         .skip(Math.max(0, restConsumed))
@@ -313,11 +351,14 @@ async function getAcceptedComments(req, res) {
     const acceptedComments = pageNum === 1 ? pinned.concat(rest) : rest;
     await attachReplyCounts(acceptedComments);
 
+    // Live comments only. A tombstone is a visible row but not a comment, so it
+    // is excluded here even though the list above renders it; this is the one
+    // place the two notions deliberately disagree.
     const totalComments = await Comment.aggregate([
       {
         $match: {
           blogId: new mongoose.Types.ObjectId(blogId),
-          status: "accepted",
+          status: LIVE_COMMENT_STATUS,
         },
       }, // Match accepted comments
       {
@@ -352,9 +393,11 @@ async function getCommentReplies(req, res) {
   const { parentCommentId } = req.params;
   const { limit = 5, before } = req.query;
   try {
+    // Replies are listed for every status a reader may see, so a reply that is
+    // itself a tombstone still renders its own placeholder in place.
     const filter = {
       parentComment: parentCommentId,
-      status: "accepted",
+      status: { $in: LISTABLE_COMMENT_STATUSES },
     };
     if (before) {
       const beforeDoc = await Comment.findById(before).select("createdAt");
@@ -379,7 +422,7 @@ async function getCommentReplies(req, res) {
           {
             $match: {
               parentComment: { $in: ids },
-              status: "accepted",
+              status: { $in: LISTABLE_COMMENT_STATUSES },
             },
           },
           {
@@ -424,97 +467,105 @@ async function deleteComment(req, res) {
       });
     }
 
-    const isParentComment = comment.parentComment === null; // Check if this is a parent comment
-
-    if (
-      comment.postedBy._id.toString() === authorId.toString() ||
-      isAdminRole(req.role)
-    ) {
-      // The whole subtree under whatever is being deleted, in one server-side
-      // $graphLookup. Walking it level by level cost two round trips per level,
-      // which is what made a 2-level delete take ~3.4s. The root is part of the
-      // result, so this also removes the comment being deleted.
-      //
-      // An aggregation already yields plain objects; .lean() is a Query method
-      // and does not exist on the Aggregate builder.
-      const subtree = await Comment.aggregate([
-        { $match: { _id: comment._id } },
-        {
-          $graphLookup: {
-            from: Comment.collection.collectionName,
-            startWith: "$_id",
-            connectFromField: "_id",
-            connectToField: "parentComment",
-            as: "descendants",
-          },
-        },
-        {
-          $project: {
-            ids: { $concatArrays: [["$_id"], "$descendants._id"] },
-            rows: {
-              $concatArrays: [
-                [{ _id: "$_id", parentComment: "$parentComment" }],
-                "$descendants",
-              ],
-            },
-          },
-        },
-      ]);
-
-      const removedIds = (subtree[0]?.ids ?? [comment._id]).map((id) =>
-        String(id),
-      );
-      const removedSet = new Set(removedIds);
-      // A removed row only costs a surviving parent its repliesCount when that
-      // parent is not itself going away.
-      const removedParents = (subtree[0]?.rows ?? [])
-        .filter(
-          (row) =>
-            row?.parentComment &&
-            !removedSet.has(String(row.parentComment)),
-        )
-        .map((row) => ({
-          id: String(row._id),
-          parentCommentId: String(row.parentComment),
-        }));
-
-      await Comment.deleteMany({ _id: { $in: removedIds } });
-
-      const deletedAt = new Date();
-      // Published before the response so a subscriber is never behind the
-      // caller that triggered the delete.
-      commentDeleted(comment.blogId, {
+    // Already a tombstone. Deleting twice is not an error - the requested end
+    // state already holds - so the same payload goes back rather than a
+    // conflict, and the caller's second attempt still converges on the same
+    // cache state.
+    if (comment.status === DELETED_COMMENT_STATUS) {
+      const existing = await Comment.countDocuments({
+        parentComment: comment._id,
+      });
+      const event = buildDeletionEvent({
         commentId: comment._id,
-        removedIds,
-        removedParents,
-        removedAt: deletedAt,
+        parentCommentId: comment.parentComment,
+        mode: DELETION_MODE.TOMBSTONED,
+        tombstone: {
+          ...toCommentPayload(comment, null),
+          repliesCount: existing,
+        },
       });
+      return res
+        .status(200)
+        .json({ message: "Comment deleted successfully", ...event });
+    }
 
-      if (isParentComment) {
-        // Decrement blog post parent comment count. Uses the blog the comment
-        // actually belonged to rather than the caller's route segment, so the
-        // count and the event can never disagree about which blog changed.
-        await BlogPost.findByIdAndUpdate(comment.blogId, {
-          $inc: { commentsCount: -1 },
-        });
-      }
-
-      // The authoritative removed set is returned too, so the tab that issued
-      // the delete can prune exactly what the server pruned.
-      res.status(200).json({
-        message: "Comment deleted successfully",
-        removedIds,
-        removedAt: deletedAt,
-      });
-    } else {
-      problem(res, {
+    const canManage =
+      comment.postedBy?._id?.toString() === authorId.toString() ||
+      isAdminRole(req.role);
+    if (!canManage) {
+      return problem(res, {
         req,
         status: 401,
         code: "UNAUTHORIZED",
         title: "Unauthorized action",
       });
-      console.log("Unauthorized action");
     }
+
+    // One row is affected, never a subtree. repliesCount answers whether this
+    // is a leaf: it counts every child still listed in a thread, so a child
+    // that is itself a tombstone keeps it above zero and the parent correctly
+    // stays a tombstone instead of being deleted out from under it.
+    const repliesCount = await Comment.countDocuments({
+      parentComment: comment._id,
+    });
+    const mode = resolveDeletionMode({ repliesCount });
+    const isParentComment = comment.parentComment === null;
+    const parentCommentId = comment.parentComment;
+    const removedAt = new Date();
+    // Read before postedBy is cleared: the avatar is all the tombstone keeps.
+    const author = await User.findById(comment.postedBy);
+
+    let tombstone = null;
+    if (mode === DELETION_MODE.TOMBSTONED) {
+      // Built once and reused for both the write and the broadcast below:
+      // recomputing it would let the stored row and the payload clients apply
+      // describe two different deletions.
+      const tombstoneUpdate = buildTombstoneUpdate(removedAt, {
+        deletedAuthorAvatar: author?.profileImage,
+        deletedBy: resolveDeletionActor({ actorRole: req.role }),
+      });
+      // Clear the body and the author in place rather than deleting the row:
+      // the replies hanging off it keep a parent to render under, and the row
+      // keeps _id/blogId/parentComment so a deep link to it still resolves.
+      await Comment.updateOne({ _id: comment._id }, tombstoneUpdate);
+      // Serialize the document before layering the tombstone fields over it.
+      // repliesCount is computed and rides along, or the client's reply control
+      // drops to zero and hides the replies.
+      tombstone = {
+        ...toCommentPayload(comment, null),
+        ...tombstoneUpdate.$set,
+        repliesCount,
+      };
+    } else {
+      // A leaf has nothing pointing at it, so the row can go for good.
+      await Comment.deleteOne({ _id: comment._id });
+    }
+
+    const event = buildDeletionEvent({
+      commentId: comment._id,
+      parentCommentId,
+      mode,
+      tombstone,
+      removedAt,
+    });
+    // Published before the response so a subscriber is never behind the caller
+    // that triggered the delete.
+    commentDeleted(comment.blogId, event);
+
+    if (isParentComment) {
+      // Decrement blog post parent comment count. Uses the blog the comment
+      // actually belonged to rather than the caller's route segment, so the
+      // count and the event can never disagree about which blog changed. A
+      // tombstone is not counted either, so both modes decrement.
+      await BlogPost.findByIdAndUpdate(comment.blogId, {
+        $inc: { commentsCount: -1 },
+      });
+    }
+
+    // The authoritative outcome is returned as well as broadcast, so the tab
+    // that issued the delete converges on exactly what the server did without
+    // waiting for its own event.
+    res.status(200).json({ message: "Comment deleted successfully", ...event });
   } catch (error) {
     console.error("Error deleting comment:", error);
     problem(res, {

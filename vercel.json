@@ -12,6 +12,12 @@
       "dest": "server.js"
     }
   ],
+  "crons": [
+    {
+      "path": "/api/cron/comment-tombstones",
+      "schedule": "17 3 * * *"
+    }
+  ],
   "env": {
     "NODE_ENV": "production"
   }
