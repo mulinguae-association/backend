@@ -41,6 +41,13 @@ export async function purgeCommentTombstones(req, res) {
     console.log(
       `[tombstones] ${dryRun ? "dry run" : "purged"}: ${summary.purged} of ${summary.scanned} expired tombstones older than ${TOMBSTONE_RETENTION_MONTHS} months`,
     );
+    // Called out separately: these rows are never purged automatically, so a
+    // non-zero count is a standing data problem, not a pending cleanup.
+    if (summary.missingDeletedAt > 0) {
+      console.warn(
+        `[tombstones] ${summary.missingDeletedAt} deleted comment(s) have no usable deletedAt and were skipped; they need a manual fix`,
+      );
+    }
 
     return res.status(200).json(summary);
   } catch (error) {

@@ -11,7 +11,8 @@
     "inspect-blog-index": "node scripts/inspectBlogFeedIndex.js",
     "postinstall": "node -e \"try{require('fs').rmSync('node_modules/@huggingface/transformers/node_modules/sharp',{recursive:true,force:true})}catch(e){}\"",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "test:ws": "node test-websocket.js"
+    "test:ws": "node test-websocket.js",
+    "test:cleanup": "node scripts/testTombstoneCleanup.js"
   },
   "type": "module",
   "keywords": [],
