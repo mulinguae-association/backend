@@ -16,10 +16,3 @@ export function removeClient(userId, ws) {
     clients.delete(userId);
   }
 }
-export function getClients(userId) {
-  return clients.get(userId) ?? new Set();
-}
-
-export function getAllClients() {
-  return clients;
-}
