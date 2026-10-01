@@ -14,7 +14,7 @@
   ],
   "crons": [
     {
-      "path": "/api/cron/comment-tombstones",
+      "path": "/api/cron/comment-tombstones/purge",
       "schedule": "17 3 * * *"
     }
   ],

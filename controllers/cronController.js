@@ -19,18 +19,13 @@ const isAuthorized = (req) => {
   return header === `Bearer ${secret}`;
 };
 
-export async function purgeCommentTombstones(req, res) {
+const run = async (req, res, dryRun) => {
   if (!isAuthorized(req)) {
     return res.status(401).json({
       error: "Unauthorized",
       detail: "A valid CRON_SECRET bearer token is required.",
     });
   }
-
-  // Dry run by default. A maintenance endpoint reachable by a scheduler should
-  // report what it would do before it does it; `?dryRun=false` is the explicit,
-  // deliberate opt-in to the write.
-  const dryRun = req.query.dryRun !== "false";
 
   try {
     const summary = await purgeExpiredTombstones({
@@ -57,4 +52,14 @@ export async function purgeCommentTombstones(req, res) {
       detail: "Tombstone cleanup failed; nothing else was touched.",
     });
   }
-}
+};
+
+// Report only. This is the path a human reaches, and the one a mis-configured
+// scheduler hits, so it must never delete.
+export const purgeCommentTombstones = (req, res) => run(req, res, true);
+
+// Actually purges. The intent is in the URL rather than a query parameter
+// because Vercel does not document query strings on a cron path: with
+// ?dryRun=false the scheduler would silently keep dry-running if the string
+// were dropped, which is the failure this split exists to prevent.
+export const purgeCommentTombstonesNow = (req, res) => run(req, res, false);
