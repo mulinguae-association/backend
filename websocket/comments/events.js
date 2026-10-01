@@ -9,6 +9,7 @@ export const COMMENT_EVENT = {
   CREATED: "comment.created",
   UPDATED: "comment.updated",
   DELETED: "comment.deleted",
+  INTERACTION_UPDATED: "comment.interactionUpdated",
 };
 
 // Normalizes whatever a caller holds into the id string a room is keyed by. A
@@ -92,4 +93,12 @@ export const commentDeleted = (blogId, event = {}) =>
     })),
     tombstone: event.tombstone || null,
     removedAt: event.removedAt,
+  });
+
+export const commentInteractionUpdated = (blogId, event = {}) =>
+  publish(blogId, COMMENT_EVENT.INTERACTION_UPDATED, {
+    commentId: idOf(event.commentId),
+    likes: (event.likes || []).map(idOf).filter(Boolean),
+    loves: (event.loves || []).map(idOf).filter(Boolean),
+    unlikes: (event.unlikes || []).map(idOf).filter(Boolean),
   });
