@@ -21,7 +21,10 @@ export const idOf = (value) => {
 // Room-scoped fan-out. Delivery is by room, not by user: a socket is in a
 // blog's room only while it still wants that blog, so this reaches exactly the
 // interested sockets and nothing else.
-export function broadcastToRoom(topic, event, data) {
+//
+// `except` omits one socket from the delivery - for an event about the sender's
+// own action, where echoing it back would make the actor see themselves.
+export function broadcastToRoom(topic, event, data, except = null) {
   const members = getRoomSockets(topic);
   if (members.size === 0) return;
   const message = JSON.stringify({
@@ -30,6 +33,7 @@ export function broadcastToRoom(topic, event, data) {
   });
 
   for (const ws of [...members]) {
+    if (ws === except) continue;
     if (ws.readyState !== ws.OPEN) {
       removeSocketFromRoom(ws, topic);
       continue;
@@ -54,6 +58,17 @@ export function publish(blogId, event, data) {
   const room = blogRoomTopic(id);
   if (!room) return false;
   broadcastToRoom(room, event, { blogId: id, ...data });
+  return true;
+}
+
+// The same, for an event about the sender's own action: delivered to the blog's
+// room but never back to the socket that caused it. The sender already knows,
+// and echoing it would make an actor appear in their own "someone is typing".
+export function publishToOthers(ws, blogId, event, data) {
+  const id = idOf(blogId);
+  const room = blogRoomTopic(id);
+  if (!room) return false;
+  broadcastToRoom(room, event, { blogId: id, ...data }, ws);
   return true;
 }
 

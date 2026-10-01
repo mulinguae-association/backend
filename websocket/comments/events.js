@@ -2,13 +2,14 @@
 // consumer keys off the same event names, so the wire shape is described once.
 // Delivery stays room-scoped: a socket is in a blog's room only while it wants
 // that blog, so an edit or delete reaches exactly the readers displaying it.
-import { idOf, publish } from "../publisher.js";
+import { idOf, publish, publishToOthers } from "../publisher.js";
 
 export const COMMENT_EVENT = {
   CREATED: "comment.created",
   UPDATED: "comment.updated",
   DELETED: "comment.deleted",
   INTERACTION_UPDATED: "comment.interactionUpdated",
+  TYPING: "comment.typing",
 };
 
 // A comment in the read API's shape, so a client can cache it directly.
@@ -76,4 +77,21 @@ export const commentInteractionUpdated = (blogId, event = {}) =>
     likes: (event.likes || []).map(idOf).filter(Boolean),
     loves: (event.loves || []).map(idOf).filter(Boolean),
     unlikes: (event.unlikes || []).map(idOf).filter(Boolean),
+  });
+
+/**
+ * Someone is typing a comment on a blog. Carries the identity resolved from the
+ * socket rather than anything the client sent: the client only says which blog it
+ * is typing on, because a name in a frame is a name anyone can claim.
+ *
+ * There is no "stopped typing" event. Absence is the stop signal, on a client-side
+ * timeout, which is why the client treats this as a refresh rather than a state
+ * change - otherwise every reader would have to age out the indicator themselves
+ * and the last keystroke would leave it showing forever.
+ */
+export const commentTyping = (ws, blogId, user) =>
+  publishToOthers(ws, blogId, COMMENT_EVENT.TYPING, {
+    userId: idOf(user?._id),
+    name: user?.name ?? "",
+    profileImage: user?.profileImage ?? null,
   });

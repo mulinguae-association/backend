@@ -93,6 +93,15 @@ export function getRoomSockets(topic) {
   return rooms.get(topic) || new Set();
 }
 
+// Whether a socket is already a member of a room, read from the reconciled set
+// joinRooms maintains rather than from the live room map. Membership is the gate
+// on client-driven traffic: a socket may only speak about a blog it is actually
+// subscribed to, which is what stops any client from driving an indicator on a
+// post nobody in that room is reading.
+export function isRoomMember(ws, topic) {
+  return Boolean(ws.topics?.has(topic));
+}
+
 export function removeSocketFromRoom(ws, topic) {
   removeFromRoom(ws, topic);
 }
