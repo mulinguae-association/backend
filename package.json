@@ -4,13 +4,15 @@
   "description": "",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js",
+    "start": "node server.js",
+    "dev": "nodemon server.js",
     "reindex-knowledge": "node scripts/reindexKnowledge.js",
     "crawl-website": "node scripts/crawlWebsite.js",
     "inspect-blog-index": "node scripts/inspectBlogFeedIndex.js",
     "postinstall": "node -e \"try{require('fs').rmSync('node_modules/@huggingface/transformers/node_modules/sharp',{recursive:true,force:true})}catch(e){}\"",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:ws": "node test-websocket.js",
+    "test:cleanup": "node scripts/testTombstoneCleanup.js"
   },
   "type": "module",
   "keywords": [],
@@ -20,7 +22,8 @@
     "@huggingface/transformers": "^4.2.0",
     "@upstash/redis": "^1.38.4",
     "axios": "^1.6.7",
-    "bcrypt": "^5.1.1",
+    "bcryptjs": "^3.0.3",
+    "body-parser": "^2.3.0",
     "cloudinary": "^2.0.0",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
@@ -32,9 +35,10 @@
     "mongoose": "^7.4.3",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^7.0.12",
-    "sharp": "^0.32.6",
+    "sharp": "^0.33.5",
     "uuid": "^9.0.0",
-    "validator": "^13.11.0"
+    "validator": "^13.11.0",
+    "ws": "^8.22.0"
   },
   "overrides": {
     "@huggingface/transformers": {
@@ -43,5 +47,15 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
+  },
+  "pnpm": {
+    "supportedArchitectures": {
+      "os": [
+        "win32"
+      ],
+      "cpu": [
+        "x64"
+      ]
+    }
   }
 }

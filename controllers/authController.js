@@ -1,5 +1,5 @@
 import User from "../db/models/User.js";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { convertToWebp } from "../utils/imageConversion.js";
 import { __dirname } from "../utils/dirname.js";

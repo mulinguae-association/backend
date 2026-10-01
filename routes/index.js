@@ -8,6 +8,7 @@ import FAQs from './FAQ.js';
 import userRoutes from './userRoutes.js';
 import express from 'express';
 import chatbotRoutes from './chatbotRoutes.js';
+import cronRoutes from './cronRoutes.js';
 
 const router = express.Router();
 
@@ -19,6 +20,7 @@ router.use("/users", userRoutes);
 router.use("/", FAQs);
 router.use("/", contactRoutes);
 router.use("/chatbot", chatbotRoutes);
+router.use("/cron", cronRoutes);
 
 
 export default router;

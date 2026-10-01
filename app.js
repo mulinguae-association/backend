@@ -1,7 +1,6 @@
 import dotenv from "dotenv"; // Move dotenv import to the top
 import express from "express";
 import cors from "cors";
-import bodyParser from "body-parser";
 import routes from "./routes/index.js";
 import { connectToDatabase } from "./db/db.js";
 import createAdminUser from "./utils/createAdminUser.js";
@@ -11,7 +10,6 @@ dotenv.config(); // Load environment variables from .env
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-app.use(bodyParser.json());
 app.use(
   cors({
     credentials: true,
@@ -64,4 +62,4 @@ app.use(async (req, res, next) => {
 app.use("/uploads", express.static("uploads"));
 app.use("/api", routes);
 
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+export default app;
