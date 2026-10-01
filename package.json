@@ -1,6 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
+  "packageManager": "pnpm@10.13.1",
   "description": "",
   "main": "app.js",
   "scripts": {
@@ -47,15 +48,5 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.11"
-  },
-  "pnpm": {
-    "supportedArchitectures": {
-      "os": [
-        "win32"
-      ],
-      "cpu": [
-        "x64"
-      ]
-    }
   }
 }
