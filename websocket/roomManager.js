@@ -3,14 +3,22 @@
 // only, so uninterested sockets receive nothing on the wire.
 const rooms = new Map();
 
-const TOPIC_PREFIX = "blog:";
+const BLOG_PREFIX = "blog:";
+
+// The one discovery topic. A new post has no room anyone can already be in,
+// because its id only exists after the write, so it is announced here instead.
+// Every accepted post is visible to the same readers, and status is set to
+// "accepted" on creation and never changes afterwards, so qualifying it further
+// would name a distinction the data does not make.
+const ACCEPTED_FEED_TOPIC = "feed:blogs";
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 
-// Ceiling on how many blogs one socket may be in at once. A feed sends its full
-// loaded set, and a page of ids is ~30 bytes each, so this is orders of
-// magnitude above any real membership (a 100-post feed needs 100). It exists to
-// stop one frame from creating an unbounded number of rooms: before the cap, a
-// single client could open 5000 rooms and every later broadcast would walk them.
+// Ceiling on how many topics one socket may be in at once. A feed sends its full
+// loaded set plus one discovery topic, and a page of ids is ~30 bytes each, so
+// this is orders of magnitude above any real membership (a 100-post feed needs
+// 101). It exists to stop one frame from creating an unbounded number of rooms:
+// before the cap, a single client could open 5000 rooms and every later
+// broadcast would walk them.
 const MAX_TOPICS_PER_SOCKET = 500;
 
 // Canonical room topic for a blog id. Both sides of the room handshake (the
@@ -18,12 +26,18 @@ const MAX_TOPICS_PER_SOCKET = 500;
 // so broadcasts go through this same parser rather than the raw body string.
 export function blogRoomTopic(id) {
   if (typeof id !== "string" || !OBJECT_ID.test(id)) return null;
-  return `${TOPIC_PREFIX}${id.toLowerCase()}`;
+  return `${BLOG_PREFIX}${id.toLowerCase()}`;
+}
+
+export function acceptedFeedTopic() {
+  return ACCEPTED_FEED_TOPIC;
 }
 
 function parseTopic(topic) {
-  if (typeof topic !== "string" || !topic.startsWith(TOPIC_PREFIX)) return null;
-  return blogRoomTopic(topic.slice(TOPIC_PREFIX.length));
+  if (typeof topic !== "string") return null;
+  if (topic === ACCEPTED_FEED_TOPIC) return topic;
+  if (!topic.startsWith(BLOG_PREFIX)) return null;
+  return blogRoomTopic(topic.slice(BLOG_PREFIX.length));
 }
 
 function addToRoom(ws, topic) {

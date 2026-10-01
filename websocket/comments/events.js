@@ -2,8 +2,7 @@
 // consumer keys off the same event names, so the wire shape is described once.
 // Delivery stays room-scoped: a socket is in a blog's room only while it wants
 // that blog, so an edit or delete reaches exactly the readers displaying it.
-import { broadcastToRoom } from "../publisher.js";
-import { blogRoomTopic } from "../roomManager.js";
+import { idOf, publish } from "../publisher.js";
 
 export const COMMENT_EVENT = {
   CREATED: "comment.created",
@@ -11,30 +10,6 @@ export const COMMENT_EVENT = {
   DELETED: "comment.deleted",
   INTERACTION_UPDATED: "comment.interactionUpdated",
 };
-
-// Normalizes whatever a caller holds into the id string a room is keyed by. A
-// Mongoose ObjectId carries neither _id nor id, so a naive check discards it -
-// and that silently dropped every update and delete, since those publish from
-// `comment.blogId` (an ObjectId) while create publishes from a route param.
-const idOf = (value) => {
-  if (!value) return null;
-  if (typeof value === "string") return value;
-  if (value._id) return String(value._id);
-  if (value.id) return String(value.id);
-  const text = String(value);
-  return text === "[object Object]" ? null : text;
-};
-
-// False when the blog cannot be addressed, so a caller never believes it
-// published when it did not.
-function publish(blogId, event, data) {
-  // Derived from the normalized id, never the raw argument, so a caller cannot
-  // address a room other than the one its payload names.
-  const room = blogRoomTopic(idOf(blogId));
-  if (!room) return false;
-  broadcastToRoom(room, event, { blogId: idOf(blogId), ...data });
-  return true;
-}
 
 // A comment in the read API's shape, so a client can cache it directly.
 // Accepts a plain object too: toObject() only exists on a document, and a
