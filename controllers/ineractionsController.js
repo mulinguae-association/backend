@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import BlogPost from "../db/models/BlogPost.js";
 import Comment from "../db/models/Comment.js";
 import { commentInteractionUpdated } from "../websocket/comments/events.js";
+import { blogInteractionUpdated } from "../websocket/blogs/events.js";
 
 // The bucket toggle is decided against the document as it stands at the moment
 // of the write, and the user is dropped from the other two buckets in that same
@@ -89,13 +90,20 @@ async function updateInteraction(req, res) {
     }
 
     // Mongo is authoritative; the room only tells the readers who were not the
-    // one clicking. A blog post has no room of its own - it lives in whichever
-    // blog's feed it appears in - so only a comment is broadcast, and it is
-    // published from the stored blogId rather than the request, which carries
-    // none. The acting tab receives this too and writes the same values twice.
+    // one clicking. Both are published from the stored document rather than the
+    // request, which carries no id: a comment from its blogId, a blog post from
+    // its own _id. The acting tab receives its own event too and writes the same
+    // values twice, which is why the client applies them as whole buckets rather
+    // than toggling.
     if (modelType === "comment") {
       commentInteractionUpdated(doc.blogId, {
         commentId: doc._id,
+        likes: doc.likes || [],
+        loves: doc.loves || [],
+        unlikes: doc.unlikes || [],
+      });
+    } else {
+      blogInteractionUpdated(doc._id, {
         likes: doc.likes || [],
         loves: doc.loves || [],
         unlikes: doc.unlikes || [],

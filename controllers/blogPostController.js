@@ -10,6 +10,11 @@ import {
   ModerationUnavailableError,
 } from "../services/moderationService.js";
 import problem from "../utils/problem.js";
+import {
+  blogCreated,
+  blogUpdated,
+  blogDeleted,
+} from "../websocket/blogs/events.js";
 
 const REJECTED_STATUS = 422;
 const UNAVAILABLE_STATUS = 503;
@@ -150,6 +155,12 @@ export async function createBlogPost(req, res) {
     const blogPost = new BlogPost({ title, subTitle, content, postedBy: author, category: resolvedCategory, status: "accepted" });
     await blogPost.save();
 
+    // Populated before announcing, because the read API returns the author's
+    // summary and a payload without it would land in a reader's cache as a post
+    // with no name or avatar - a shape no list entry ever has.
+    await blogPost.populate(populateAuthor);
+    blogCreated(blogPost);
+
     return res.json({
       message: "Blog post submitted successfully",
       blogPost: blogPost.toObject(),
@@ -184,6 +195,11 @@ export async function deleteBlogPost(req, res) {
     // are stringified because one is an ObjectId and the other may be a string.
     if (String(blogPost.postedBy) === String(userId) || isAdminRole(req.role)) {
       await BlogPost.findByIdAndDelete(id);
+
+      // Published from the document's own id, so a subscriber is told which post
+      // vanished rather than which request removed it.
+      blogDeleted(blogPost._id);
+
       return res
         .json({ message: "Blog post deleted successfully" });
     } else {
@@ -264,6 +280,10 @@ export async function updateBlogPost(req, res) {
 
     await blogPost.save();
     await blogPost.populate(populateAuthor);
+
+    // Announced after the write, so a reader is never handed a post the server
+    // has not committed.
+    blogUpdated(blogPost._id, blogPost);
 
     return res.json({
       message: "Blog post updated successfully",
